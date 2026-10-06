@@ -1,6 +1,6 @@
-# 📱 Smartphone Data Warehouse — Spesifikasi, Harga Marketplace & Persepsi Publik
+# 📱 Analisis Kondisi Pasar Smartphone Tahun 2025-2026 Berdasarkan Harga, Spesifikasi, dan Popularitas Produk Pada Marketplace
 
-Project **PJBL Data Mining II** ini membangun sebuah **data warehouse (lakehouse) smartphone** yang mengintegrasikan data spesifikasi dari **GSMArena**, data harga & penjualan dari **Tokopedia** dan **Shopee**, serta (sebagai tahap lanjutan) sentimen komentar **YouTube**. Seluruh data disimpan di **DuckDB**, diintegrasikan ke **DuckLake** dengan *star schema*, lalu divisualisasikan melalui dashboard **Streamlit**.
+Project **PJBL Data Mining II** ini membangun sebuah **data warehouse (lakehouse) smartphone** yang mengintegrasikan data spesifikasi dari **GSMArena**, data harga & penjualan dari **Tokopedia** dan **Shopee**, serta sentimen komentar **YouTube**. Seluruh data disimpan di **DuckDB**, diintegrasikan ke **DuckLake** dengan *star schema*, lalu divisualisasikan melalui dashboard **Streamlit**.
 
 > Analisis harga, penjualan, dan persepsi publik smartphone di marketplace Indonesia, dari proses scraping hingga dashboard interaktif.
 
