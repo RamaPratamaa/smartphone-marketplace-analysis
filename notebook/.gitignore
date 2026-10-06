@@ -1,0 +1,28 @@
+
+# Virtual environment Python
+venv/
+.venv/
+env/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+
+# Cache Jupyter Notebook
+.ipynb_checkpoints/
+
+# File environment dan kredensial
+.env
+.env.*
+!.env.example
+
+# Log dan file sementara
+*.log
+.DS_Store
+Thumbs.db
+
+# File sementara transaksi database
+*.wal
+
+# File konfigurasi editor
+.vscode/
