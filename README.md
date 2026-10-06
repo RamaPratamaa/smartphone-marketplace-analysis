@@ -360,8 +360,8 @@ PJBL/
 ## 1. Clone Repository
 
 ```bash
-git clone https://github.com/[username]/[nama-repo].git
-cd [nama-repo]
+git clone https://github.com/RamaPratamaa/smartphone-marketplace-analysis.git
+cd [smartphone-marketplace-analysis.git]
 ```
 
 ## 2. Buat Virtual Environment (Direkomendasikan)
