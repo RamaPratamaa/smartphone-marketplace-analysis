@@ -131,8 +131,8 @@ Project mengikuti arsitektur **medallion** (bronze → gold):
                       │
      ┌────────────┬───┴────────┬────────────┐
      ▼            ▼            ▼            ▼
- GSMArena     Tokopedia      Shopee      YouTube*
-(requests)    (Selenium)    (Selenium)   (opsional)
+ GSMArena     Tokopedia      Shopee      YouTube
+(requests)    (Selenium)    (Selenium)   (Selenium)
      │            │            │            │
      ▼            ▼            ▼            ▼
 gsmarena      tokopedia      shopee      youtube
