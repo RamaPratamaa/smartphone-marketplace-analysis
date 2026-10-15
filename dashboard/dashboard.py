@@ -9,6 +9,7 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+import traceback
 
 import duckdb
 import numpy as np
@@ -21,8 +22,8 @@ ROOT = Path(__file__).resolve().parent.parent
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT / "SRC"))
 
-LAKE_CATALOG = "DuckLake/shared_catalog.ducklake"
-LAKE_DATA = "DuckLake/lakehouse_storage/"
+LAKE_CATALOG = "lakehouse/shared_catalog.ducklake"
+LAKE_DATA = "lakehouse/shared_catalog.ducklake.files/"
 MODE_LAKE = "Katalog bersama (DuckLake)"
 MODE_LOCAL = "Mode lokal (tanpa DuckLake)"
 
@@ -111,18 +112,29 @@ def style(fig, h=420):
 
 @contextlib.contextmanager
 def guard():
-    """Jika satu tab error, tampilkan pesan di tab itu saja (tab lain tetap jalan)."""
+    """Menampilkan error pada tab terkait dan mencatat traceback."""
     try:
         yield
     except st.errors.StreamlitAPIException:
         raise
-    except Exception as e:  # noqa: BLE001
-        st.error(f"Bagian ini gagal ditampilkan: {type(e).__name__}: {e}")
-        st.caption("Coba perbarui library: `pip install --upgrade plotly pandas streamlit`")
+    except Exception as e:
+        print("\n" + "=" * 70)
+        print("ERROR PADA DASHBOARD")
+        traceback.print_exc()
+        print("=" * 70 + "\n")
+
+        st.error(
+            f"Bagian ini gagal ditampilkan: "
+            f"{type(e).__name__}: {e}"
+        )
+        st.caption(
+            "Detail error lengkap tersedia di terminal tempat "
+            "Streamlit dijalankan."
+        )
 
 
 def show(fig, h=420):
-    st.plotly_chart(style(fig, h), width="stretch")
+    st.plotly_chart(style(fig, h), use_container_width=True)
 
 
 # ============================ koneksi & data ============================
@@ -131,9 +143,14 @@ def get_con(mode: str):
     if mode == MODE_LAKE:
         con = duckdb.connect()
         con.execute("INSTALL ducklake; LOAD ducklake;")
+        
+        
         con.execute(
-            f"ATTACH 'ducklake:{LAKE_CATALOG}' AS lake (DATA_PATH '{LAKE_DATA}', READ_ONLY)"
+            f"ATTACH 'ducklake:{LAKE_CATALOG}' AS lake "
+            "(OVERRIDE_DATA_PATH TRUE, READ_ONLY)"
         )
+
+
         return con
     # Mode lokal: bangun "lake" sementara di memori dari database lokal (tanpa ekstensi DuckLake)
     import build_lake
@@ -509,23 +526,57 @@ with tabs[2], guard():
                 show(fig, 380)
             else:
                 st.info("Belum ada merek dengan minimal 2 model yang dibandingkan.")
-
         st.markdown("##### Tabel perbandingan")
-        tbl = cmp_df[["phone_name", "brand", "listing_tokopedia", "listing_shopee",
-                      "median_tokopedia", "median_shopee", "selisih_pct"]].sort_values("selisih_pct")
+
+        tbl = (
+            cmp_df[
+                [
+                    "phone_name",
+                    "brand",
+                    "listing_tokopedia",
+                    "listing_shopee",
+                    "median_tokopedia",
+                    "median_shopee",
+                    "selisih_pct",
+                ]
+            ]
+            .sort_values(by="selisih_pct")
+            .copy()
+        )
+
+        # Gunakan format tampilan sederhana terlebih dahulu
         st.dataframe(
-            tbl, width="stretch", hide_index=True,
+            tbl,
+            use_container_width=True,
+            hide_index=True,
             column_config={
-                "phone_name": "Model", "brand": "Merek",
-                "listing_tokopedia": st.column_config.NumberColumn("Listing Tokped", format="%d"),
-                "listing_shopee": st.column_config.NumberColumn("Listing Shopee", format="%d"),
-                "median_tokopedia": st.column_config.NumberColumn("Median Tokopedia", format="Rp %d"),
-                "median_shopee": st.column_config.NumberColumn("Median Shopee", format="Rp %d"),
-                "selisih_pct": st.column_config.NumberColumn("Selisih (%)", format="%+.1f"),
+                "phone_name": st.column_config.TextColumn("Model"),
+                "brand": st.column_config.TextColumn("Merek"),
+                "listing_tokopedia": st.column_config.NumberColumn(
+                    "Listing Tokped", format="%d"
+                ),
+                "listing_shopee": st.column_config.NumberColumn(
+                    "Listing Shopee", format="%d"
+                ),
+                "median_tokopedia": st.column_config.NumberColumn(
+                    "Median Tokopedia", format="Rp %.0f"
+                ),
+                "median_shopee": st.column_config.NumberColumn(
+                    "Median Shopee", format="Rp %.0f"
+                ),
+                "selisih_pct": st.column_config.NumberColumn(
+                    "Selisih (%)", format="%+.1f%%"
+                ),
             },
         )
-        st.download_button("⬇️ Unduh CSV", tbl.to_csv(index=False).encode("utf-8"),
-                           "banding_harga.csv", "text/csv")
+
+        st.download_button(
+            "⬇️ Unduh CSV",
+            data=tbl.to_csv(index=False).encode("utf-8"),
+            file_name="banding_harga.csv",
+            mime="text/csv",
+        )
+
         warn(f"Ukuran sampel kecil ({len(cmp_df)} model). Median per model dihitung dari "
              "sedikit listing di Shopee, jadi baca hasil ini sebagai indikasi, bukan kesimpulan pasti.")
 
@@ -574,7 +625,7 @@ with tabs[3], guard():
                 "Batas bawah 95% (%)": (np.exp(beta[1:] - 1.96 * se[1:]) - 1) * 100,
                 "Batas atas 95% (%)": (np.exp(beta[1:] + 1.96 * se[1:]) - 1) * 100,
             })
-            st.dataframe(out.round(1), hide_index=True, width="stretch")
+            st.dataframe(out.round(1), hide_index=True, use_container_width=True)
             insight(f"Regresi sederhana ini menjelaskan sekitar **{r2 * 100:.0f}%** variasi harga "
                     f"({len(sp)} model). Interval yang melewati 0% berarti efeknya belum jelas.")
             warn("Indikatif saja: RAM, penyimpanan, dan merek saling berkaitan (multikolinearitas), "
@@ -598,11 +649,11 @@ with tabs[3], guard():
         }
         with v1:
             st.caption("Spesifikasi tinggi untuk harganya")
-            st.dataframe(sp.nlargest(10, "worth_it")[cols], hide_index=True, width="stretch",
+            st.dataframe(sp.nlargest(10, "worth_it")[cols], hide_index=True, use_container_width=True,
                          column_config=cfg)
         with v2:
             st.caption("Harga tinggi untuk spesifikasinya")
-            st.dataframe(sp.nsmallest(10, "worth_it")[cols], hide_index=True, width="stretch",
+            st.dataframe(sp.nsmallest(10, "worth_it")[cols], hide_index=True, use_container_width=True,
                          column_config=cfg)
         st.caption("Skor spek = rata-rata persentil RAM, penyimpanan, dan baterai. "
                    "Worth-it = skor spek dikurangi persentil harga. Tidak menilai kamera, layar, atau chipset.")
@@ -710,7 +761,7 @@ with tabs[4], guard():
             st.caption("Komentar dengan like terbanyak")
             topc = yt.nlargest(10, "like_count")[["channel", "like_count", "komentar"]].copy()
             topc["komentar"] = topc["komentar"].str.slice(0, 180)
-            st.dataframe(topc, hide_index=True, width="stretch", height=520,
+            st.dataframe(topc, hide_index=True, use_container_width=True, height=520,
                          column_config={"channel": "Channel",
                                         "like_count": st.column_config.NumberColumn("Like", format="%d"),
                                         "komentar": "Komentar"})
@@ -753,7 +804,7 @@ with tabs[5], guard():
                                "gsmarena_lokal.duckdb", "youtube_lokal.duckdb"],
             "Di katalog bersama": ["lake.tokopedia", "lake.shopee", "lake.gsmarena", "lake.youtube"],
             "Dipakai di": ["fact_price", "fact_price", "dim_phone", "tab Suara Komentar"],
-        }), hide_index=True, width="stretch")
+        }), hide_index=True, use_container_width=True)
         st.markdown("**Lapisan lintas sumber:** `lake.analytics` → `dim_phone`, `map_listing`, "
                     "`fact_price`, `banding_harga`.")
 
@@ -762,7 +813,7 @@ with tabs[5], guard():
         try:
             con = get_con(mode)
             snaps = con.sql("SELECT snapshot_id, snapshot_time, changes FROM lake.snapshots()").df()
-            st.dataframe(snaps, hide_index=True, width="stretch")
+            st.dataframe(snaps, hide_index=True, use_container_width=True)
             pilih = st.selectbox("Lihat jumlah baris fact_price pada snapshot",
                                  snaps["snapshot_id"].tolist()[::-1])
             try:
