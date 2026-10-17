@@ -2,7 +2,7 @@
 
 Project **PJBL Data Mining II** ini mengintegrasikan data spesifikasi smartphone dari **GSMArena**, listing harga dari **Tokopedia** dan **Shopee**, serta komentar YouTube. Pipeline menggunakan **DuckDB** untuk pengolahan data per sumber, **DuckLake** sebagai katalog lakehouse bersama dengan data fisik Parquet, SQL untuk transformasi, dan **Streamlit** untuk dashboard analitik.
 
-> Fokus implementasi yang tersedia saat ini adalah pemetaan listing marketplace ke model HP, analisis harga dan listing, hubungan spesifikasi dengan harga, serta analisis komentar dan penyebutan merek di YouTube. Pipeline yang ada belum membangun model klasifikasi sentimen positif/netral/negatif.
+> Fokus implementasi yang tersedia saat ini adalah pemetaan listing marketplace ke model HP, analisis harga dan listing, hubungan spesifikasi dengan harga, serta analisis komentar dan penyebutan merek di YouTube.
 
 ---
 
