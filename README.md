@@ -1,543 +1,391 @@
-# 📱 Analisis Kondisi Pasar Smartphone Tahun 2025-2026 Berdasarkan Harga, Spesifikasi, dan Popularitas Produk Pada Marketplace
+# 📱 Analisis Harga dan Spesifikasi Smartphone di Marketplace Indonesia
 
-Project **PJBL Data Mining II** ini membangun sebuah **data warehouse (lakehouse) smartphone** yang mengintegrasikan data spesifikasi dari **GSMArena**, data harga & penjualan dari **Tokopedia** dan **Shopee**, serta sentimen komentar **YouTube**. Seluruh data disimpan di **DuckDB**, diintegrasikan ke **DuckLake** dengan *star schema*, lalu divisualisasikan melalui dashboard **Streamlit**.
+Project **PJBL Data Mining II** ini mengintegrasikan data spesifikasi smartphone dari **GSMArena**, listing harga dari **Tokopedia** dan **Shopee**, serta komentar YouTube. Pipeline menggunakan **DuckDB** untuk pengolahan data per sumber, **DuckLake** sebagai katalog lakehouse bersama dengan data fisik Parquet, SQL untuk transformasi, dan **Streamlit** untuk dashboard analitik.
 
-> Analisis harga, penjualan, dan persepsi publik smartphone di marketplace Indonesia, dari proses scraping hingga dashboard interaktif.
-
----
-
-# 🎯 Tujuan Project
-
-Project ini bertujuan membangun pipeline **Data Ingestion → ETL → Data Warehouse/Lakehouse → Analytics → Dashboard** untuk menjawab pertanyaan seperti:
-
-- Berapa selisih harga HP yang sama antara Tokopedia dan Shopee?
-- Marketplace mana yang lebih murah untuk HP tertentu?
-- Bagaimana harga, rating, dan jumlah terjual berbeda antar brand?
-- Bagaimana hubungan spesifikasi (chipset, RAM, storage, baterai) dengan harga?
-- Apakah HP dengan sentimen positif di YouTube juga memiliki performa penjualan yang lebih baik di marketplace?
-- HP mana yang harganya tinggi tetapi sentimen negatifnya juga tinggi?
-
-**Pertanyaan riset utama:**
-> *Apakah brand/HP yang mendapat sentimen positif di YouTube juga memiliki harga dan penjualan yang lebih baik di marketplace Indonesia?*
+> Fokus implementasi yang tersedia saat ini adalah pemetaan listing marketplace ke model HP, analisis harga dan listing, hubungan spesifikasi dengan harga, serta analisis komentar dan penyebutan merek di YouTube.
 
 ---
 
-# 👥 Anggota Tim
+## 🎯 Tujuan Project
+
+Project ini membangun alur **data ingestion → ETL per sumber → publikasi ke DuckLake → integrasi lintas sumber → analytics → dashboard** untuk membantu menjawab pertanyaan:
+
+- Berapa median harga smartphone yang sama di Tokopedia dan Shopee?
+- Berapa selisih harga antarmarketplace untuk model yang tersedia di kedua platform?
+- Berapa banyak listing yang dapat dipetakan secara meyakinkan ke model HP tertentu?
+- Bagaimana harga listing bervariasi menurut merek dan spesifikasi?
+- Kata atau merek apa yang sering disebut dalam komentar YouTube yang tersedia?
+- Seberapa banyak data yang lolos pemeriksaan kualitas dan dapat digunakan dalam analisis?
+
+Analisis perbandingan harga hanya mewakili listing yang berhasil dikumpulkan, dipetakan, dan lolos filter kualitas. Hasilnya tidak otomatis mewakili seluruh harga di marketplace.
+
+## 👥 Anggota Tim
 
 | Nama | Tugas Utama |
 |---|---|
-| Firqi | [isi tugas] |
-| Yudha | [isi tugas] |
-| Rama | [isi tugas] |
+| Rama | Mengembangkan modul web scraping dan akuisisi data dari setiap sumber, serta merancang dan membangun database DuckDB terpisah untuk masing-masing dataset sebagai penyimpanan hasil ekstraksi. |
+| Yudha | Mengembangkan pipeline pengolahan dan integrasi data menggunakan SQL, DuckDB, dan DuckLake, meliputi transformasi, pembersihan, standardisasi, pemetaan listing ke model smartphone, validasi kualitas data, serta analisis komparatif harga. |
+| Firqi | Merancang dan mengembangkan dashboard analitik interaktif menggunakan Streamlit dan Plotly, mengintegrasikan tabel analitik dari DuckLake, serta menyajikan ringkasan data, perbandingan harga marketplace, hubungan spesifikasi dengan harga, ringkasan komentar, dan indikator kualitas data. |
 
 > Mata kuliah: **Data Mining II** — Semester 7
 
 ---
 
-# 📦 Dataset
+## 📦 Sumber Data
 
-Project menggunakan tiga sumber data utama yang di-*scrape* sendiri, ditambah satu sumber sentimen.
+### 1. GSMArena — spesifikasi smartphone
 
-## 1. 📘 GSMArena — Spesifikasi HP
+- **Sumber:** [gsmarena.com](https://www.gsmarena.com)
+- **CSV:** `data/raw_dataset_gsmarena.csv`
+- **Database hasil pipeline lokal:** `database/gsmarena_lokal.duckdb`
+- **Proses scraping/dokumentasi:** `notebook/01_scraping_gsmarena.ipynb`
 
-**Sumber:** [gsmarena.com](https://www.gsmarena.com)
-**Metode:** `requests` + `BeautifulSoup`
-**File mentah:** `data/raw_dataset_gsmarena.csv` · `database/gsmarena.duckdb`
+Data mencakup identitas model dan atribut spesifikasi yang tersedia, seperti merek, nama HP, chipset, RAM, penyimpanan, baterai, tahun rilis, URL, dan waktu scraping. SQL clean membentuk `phone_id`, mengurai beberapa atribut numerik, serta menyiapkan tabel bersih dan ringkasan spesifikasi per merek.
 
-Berisi spesifikasi HP rilis **2025 ke atas** dari 10 brand yang populer di Indonesia:
+### 2. Tokopedia — listing dan harga
+
+- **Sumber:** [tokopedia.com](https://www.tokopedia.com)
+- **CSV:** `data/raw_dataset_tokopedia.csv`
+- **Database pipeline lokal:** `database/tokopedia_lokal.duckdb`
+- **Notebook:** `notebook/02_scraping_tokopedia.ipynb`
+
+Data berisi judul produk, URL, keyword pencarian, harga saat ini/harga asli, rating, jumlah terjual, informasi penjual, dan waktu scraping. SQL staging/clean mengubah harga dan atribut teks menjadi nilai yang dapat dianalisis, menghitung diskon, dan menandai harga yang wajar serta kemungkinan listing aksesori.
+
+### 3. Shopee — listing dan harga
+
+- **Sumber:** [shopee.co.id](https://shopee.co.id)
+- **CSV:** `data/raw_dataset_shopee.csv`
+- **Database pipeline lokal:** `database/shopee_lokal.duckdb`
+- **Notebook:** `notebook/03_scraping_shopee.ipynb`
+
+Struktur datanya serupa dengan Tokopedia, tetapi terdapat perbedaan kolom dan proses deteksi URL berulang yang ditangani oleh SQL sumber dan SQL lakehouse. Metode scraping dan jumlah listing dapat berubah sesuai data yang berhasil dikumpulkan.
+
+### 4. YouTube — komentar
+
+- **CSV:** `data/DATASET_KOMEN_4_CHANNEL.csv`
+- **Database pipeline lokal:** `database/youtube_lokal.duckdb`
+- **Notebook scraping khusus:** tidak ada pada daftar notebook saat ini; proses ETL komentar tersedia di `sql/youtube/`.
+
+SQL YouTube membersihkan teks komentar, menandai komentar duplikat/terlalu pendek dan komentar pemilik channel, lalu membentuk ringkasan per channel serta jumlah penyebutan merek. **SQL yang tersedia tidak menghasilkan label sentimen positif, netral, atau negatif.** Oleh karena itu, hasil analisis YouTube harus disebut sebagai analisis komentar/penyebutan merek, bukan hasil model sentimen.
+
+> Jumlah baris pada CSV dan database dapat berbeda karena file data bisa diperbarui. Untuk angka aktual, jalankan pipeline dan gunakan jumlah baris yang tercetak saat build, bukan menganggap angka lama di dokumentasi selalu berlaku.
+
+---
+
+## 🏗️ Arsitektur dan Alur Data
 
 ```text
-Samsung · Xiaomi · Oppo · Vivo · Realme · Infinix · Tecno · itel · Apple · Huawei
+CSV sumber / data hasil scraping
+        │
+        ▼
+notebook/01–03 (pengambilan/eksplorasi data)
+        │
+        ▼
+SRC/build_local.py + SQL per sumber
+        │
+        ├── database/gsmarena_lokal.duckdb
+        ├── database/tokopedia_lokal.duckdb
+        ├── database/shopee_lokal.duckdb
+        └── database/youtube_lokal.duckdb
+        │
+        ▼
+SRC/publish.py
+Menyalin tabel terpilih ke katalog DuckLake bersama
+        │
+        ▼
+lake.<sumber>.<tabel>
+        │
+        ▼
+SRC/build_lake.py + sql/lake/10–13
+        │
+        ▼
+lake.analytics.dim_phone
+lake.analytics.map_listing
+lake.analytics.fact_price
+lake.analytics.banding_harga
+        │
+        ▼
+dashboard/dashboard.py (Streamlit)
 ```
 
-| Kolom mentah | Contoh |
+Pipeline yang dijalankan dari folder root project:
+
+1. `python SRC/build_local.py` — menjalankan SQL sumber untuk semua database lokal.
+2. `python SRC/publish.py` — memublikasikan tabel terpilih dari database lokal ke DuckLake.
+3. `python SRC/build_lake.py` — membangun tabel analitik lintas sumber di DuckLake.
+4. `python -m streamlit run dashboard/dashboard.py` — menjalankan dashboard.
+
+Untuk membangun satu sumber saja, gunakan misalnya `python SRC/build_local.py --source tokopedia`. Pilihan sumber yang tersedia adalah `tokopedia`, `shopee`, `gsmarena`, dan `youtube`.
+
+### Peran folder utama
+
+| Folder | Tanggung jawab |
 |---|---|
-| `brand`, `phone_name` | Samsung, Samsung Galaxy A17 |
-| `chipset_raw` | `Exynos 1480 (4 nm)` |
-| `internalmemory_raw` | `128GB 8GB RAM` |
-| `battery_raw`, `released_raw`, `release_year` | — |
-| `gsmarena_url`, `scraped_at` | — |
-
-Granularitas: `1 baris = 1 model HP`
-
-Data mentah: **282 HP** → setelah dibersihkan menjadi **270 HP** siap pakai (rilis ≥ 2025). Daftar nama HP ini juga menjadi **daftar keyword pencarian** untuk Tokopedia dan Shopee.
+| `data/` | CSV sumber yang digunakan oleh query ingest. |
+| `database/` | Database DuckDB lokal per sumber, termasuk database hasil pipeline dengan akhiran `_lokal`. Beberapa file database lain juga ada di arsip dan tidak otomatis menjadi input pipeline `SRC/`. |
+| `SRC/` | Mengatur build lokal, publikasi tabel, dan build tabel analitik lakehouse. |
+| `sql/` | Berisi query ETL untuk tiap sumber dan query integrasi lintas sumber. |
+| `lakehouse/` | Katalog DuckLake dan folder data fisik yang dikelola DuckLake. |
+| `dashboard/` | Antarmuka analitik Streamlit. |
+| `notebook/` | Notebook scraping dan notebook pembangunan/eksplorasi DuckLake. |
 
 ---
 
-## 2. 🛒 Tokopedia — Harga & Penjualan
+## 🧱 ETL Per Sumber: `SRC/` dan `sql/`
 
-**Sumber:** [tokopedia.com](https://www.tokopedia.com)
-**Metode:** Selenium (tersambung ke Chrome remote debugging) + `BeautifulSoup`
-**File mentah:** `data/raw_dataset_tokopedia.csv` · `database/tokopedia.duckdb`
+### `SRC/config.py`
 
-Data mentah: **1.451 listing** dari ±182 keyword HP (scraping 1–3 Oktober 2026).
+Pusat konfigurasi untuk:
 
----
+- `LAKE_CATALOG`: path katalog bersama `lakehouse/shared_catalog.ducklake`.
+- `LAKE_DATA`: path penyimpanan data fisik DuckLake, yaitu `lakehouse/shared_catalog.ducklake.files/`.
+- `SOURCES`: database lokal, folder SQL, dan tabel yang dipublikasikan untuk masing-masing sumber.
+- `SQL_LAKE_DIR`: folder query integrasi lintas sumber (`sql/lake`).
 
-## 3. 🛍️ Shopee — Harga & Penjualan
+Konfigurasi publikasi saat ini:
 
-**Sumber:** [shopee.co.id](https://shopee.co.id)
-**Metode:** Selenium + `BeautifulSoup` (mode semi-manual karena Shopee memblokir akses otomatis)
-**File mentah:** `data/raw_dataset_shopee.csv` · `database/shopee.duckdb`
-
-Data mentah: **606 listing** dari ±167 keyword HP (scraping 3–4 Oktober 2026).
-
-Struktur kolom mentah Tokopedia & Shopee sama:
-
-| Kolom | Keterangan |
-|---|---|
-| `keyword` | Nama HP yang dicari (dari GSMArena) |
-| `product_name`, `product_url` | Judul & link listing |
-| `price_discount_raw`, `price_original_raw` | Harga setelah/sebelum diskon (masih teks, mis. `Rp1.999.000`) |
-| `discount_label_raw` | Label diskon |
-| `rating_raw`, `sold_raw` | Rating & jumlah terjual (mis. `1,2rb+ terjual`) |
-| `seller_name`, `seller_location` | Info penjual |
-| `scraped_at` | Waktu scraping |
-
-Granularitas: `1 baris = 1 listing produk di 1 platform`
-
----
-
-## 4. 🎥 YouTube — Komentar Review
-
-**Sumber:** Komentar pada channel review gadget Indonesia
-**File:** `database/youtube.duckdb` 
-
-Data ini dipakai untuk menghitung **sentimen per HP** (positif / netral / negatif). Pipeline akan otomatis menyertakan data YouTube begitu `youtube.duckdb` dengan tabel `fact_youtube_sentiment` tersedia. Selama belum ada, bagian sentimen di dashboard ditampilkan sebagai *"belum tersedia"*.
-
----
-
-# 🔗 Integrasi Sumber Data
-
-| Sumber | Peran | Granularitas | Kunci Integrasi |
-|---|---|---|---|
-| GSMArena | Dimensi HP (spesifikasi) | 1 model HP | `phone_name` baku |
-| Tokopedia | Fakta harga & penjualan | 1 listing | dicocokkan ke `phone_name` |
-| Shopee | Fakta harga & penjualan | 1 listing | dicocokkan ke `phone_name` |
-| YouTube *(opsional)* | Fakta sentimen | 1 komentar | `phone_id` |
-
-Judul listing marketplace tidak seragam (mis. `"iPhone 16 128gb NEW BARU SEGEL"`), sehingga setiap listing **dicocokkan ke nama HP baku GSMArena** menggunakan normalisasi nama, pencocokan varian (`Pro`, `Plus`, `Ultra`, `Max`, dll.), dan pencocokan RAM/storage dari judul.
-
-> Karena metodologi dan isi listing tiap platform berbeda, selisih harga disebut sebagai **price gap** antar platform, bukan otomatis sebagai kelebihan/kekurangan suatu marketplace.
-
----
-
-# 🏗️ Arsitektur Data Warehousing
-
-Project mengikuti arsitektur **medallion** (bronze → gold):
-
-```text
-                 DATA SOURCES
-                      │
-     ┌────────────┬───┴────────┬────────────┐
-     ▼            ▼            ▼            ▼
- GSMArena     Tokopedia      Shopee      YouTube*
-(requests)    (Selenium)    (Selenium)   (opsional)
-     │            │            │            │
-     ▼            ▼            ▼            ▼
-gsmarena      tokopedia      shopee      youtube
- .duckdb       .duckdb       .duckdb     .duckdb
-     │            │            │            │
-     └────────────┴─────┬──────┴────────────┘
-                        │      BRONZE (data mentah per sumber)
-                        ▼
-              ETL / ELT (04_build_ducklake)
-       bersihkan → cocokkan nama → seimbangkan jumlah data
-                        │
-                        ▼
-                    DUCKLAKE        GOLD (star schema)
-              lakehouse.ducklake
-                  + file Parquet
-                        │
-                        ▼
-                ANALYTICS MART
-                        │
-                        ▼
-                STREAMLIT DASHBOARD
-```
-
----
-
-# 🗄️ Bronze Layer — Local DuckDB
-
-Setiap sumber memiliki database DuckDB sendiri yang berfungsi sebagai **raw/staging layer**. Data disimpan **apa adanya** dari sumber (kolom `*_raw` masih berupa teks), sehingga selalu dapat ditelusuri.
-
-| Database | Tabel | Isi |
+| Sumber | Database lokal | Tabel lokal → tabel di DuckLake |
 |---|---|---|
-| `gsmarena.duckdb` | `phone_specs` | Spesifikasi mentah per HP |
-| `tokopedia.duckdb` | `listings`, `search_progress` | Listing mentah & checkpoint keyword |
-| `shopee.duckdb` | `listings`, `search_progress` | Listing mentah & checkpoint keyword |
+| Tokopedia | `database/tokopedia_lokal.duckdb` | `clean.tokopedia` → `lake.tokopedia.clean_listing`; `mart.harga_model` → `lake.tokopedia.harga_model` |
+| Shopee | `database/shopee_lokal.duckdb` | `clean.shopee` → `lake.shopee.clean_listing`; `mart.ringkasan_keyword` → `lake.shopee.ringkasan_keyword` |
+| GSMArena | `database/gsmarena_lokal.duckdb` | `clean.gsmarena` → `lake.gsmarena.clean_spek`; `mart.spek_per_merek` → `lake.gsmarena.spek_per_merek` |
+| YouTube | `database/youtube_lokal.duckdb` | `clean.youtube_komentar` → `lake.youtube.clean_komentar`; `mart.ringkasan_channel` → `lake.youtube.ringkasan_channel`; `mart.sebut_merek` → `lake.youtube.sebut_merek` |
 
-**Fitur penting scraping:**
+### `SRC/build_local.py`
 
-- **Checkpoint di dalam DuckDB** — scraping dapat dihentikan dan dilanjutkan kapan saja; HP/keyword yang sudah tersimpan otomatis dilewati.
-- **Penyaringan aksesoris** — listing case, charger, tempered glass, dsb. dibuang sejak bronze.
-- **Rate-limit aware** — jeda acak antar request dan berhenti otomatis jika terdeteksi blokir.
-- **Round-robin keyword** — keyword dipilih bergantian antar brand supaya semua brand terwakili.
-- **Ekspor CSV** — `data/raw_dataset_*.csv` selalu dibuat ulang dari isi tabel DuckDB (untuk lampiran laporan, bukan sumber data utama).
+Mencari file `.sql` di folder sumber sesuai urutan nama (`01_`, `02_`, dan seterusnya), membuka database lokal DuckDB, lalu menjalankan query satu per satu. Program mencetak tabel yang ditemukan beserta jumlah barisnya. SQL sumber menggunakan pola pembuatan ulang tabel, sehingga build ulang menghitung ulang tabel dari CSV sumber.
+
+### Empat tahap SQL sumber
+
+Setiap sumber memiliki pola empat file:
+
+| File | Fungsi umum |
+|---|---|
+| `01_ingest.sql` | Membaca CSV ke tabel `raw`. |
+| `02_staging.sql` | Menstandarkan kolom dan mengonversi tipe data. |
+| `03_clean.sql` | Menambahkan hasil pembersihan dan penanda kualitas. Penanda tidak selalu berarti baris langsung dihapus. |
+| `04_mart.sql` | Membuat ringkasan agregat untuk kebutuhan analisis. |
+
+Rincian per sumber:
+
+- **`sql/gsmarena/`**: membangun `raw.gsmarena`, tabel staging/clean spesifikasi, dan `mart.spek_per_merek`.
+- **`sql/tokopedia/`**: mengurai harga, rating dan jumlah terjual; menandai harga wajar/kemungkinan aksesori; membentuk `mart.harga_model`.
+- **`sql/shopee/`**: melakukan transformasi serupa untuk Shopee dan membentuk `mart.ringkasan_keyword`; kolom tertentu seperti `url_pertama` digunakan untuk menandai URL pertama/duplikasi.
+- **`sql/youtube/`**: membersihkan komentar, memberi penanda kualitas, dan membentuk `mart.ringkasan_channel` serta `mart.sebut_merek`.
+
+### `SRC/publish.py`
+
+Membuka katalog DuckLake, memasang database lokal sebagai sumber baca, membuat schema sumber di katalog bersama, lalu menyalin tabel yang ditetapkan di `SOURCES`. Tabel tujuan dihapus dan dibuat ulang sebelum data disalin. Artinya, proses publikasi ini merupakan **full refresh**, bukan sinkronisasi inkremental.
+
+### `SRC/build_lake.py`
+
+Menjalankan seluruh SQL di `sql/lake/` secara berurutan, mencetak jumlah baris tabel analitik, ringkasan listing per marketplace, serta riwayat snapshot katalog.
 
 ---
 
-# 🦆 Gold Layer — DuckLake & Star Schema
+## 🦆 DuckLake dan Model Analitik
 
-Data dari seluruh bronze di-`ATTACH` (read-only), dibersihkan, lalu ditulis ke satu **DuckLake**:
-
-- `lakehouse.ducklake` — catalog/metadata
-- `files/` — file Parquet (data fisik)
-
-## Star Schema
+Katalog DuckLake yang digunakan adalah:
 
 ```text
-                 dim_brand
-                     │
-                     ▼
-dim_date ──►  fact_sales  ◄── dim_phone
-                 ▲   ▲
-                 │   │
-         dim_platform  dim_seller
+lakehouse/shared_catalog.ducklake
 ```
 
-| Tabel | Jenis | Isi |
+DuckLake menggunakan `lakehouse/shared_catalog.ducklake` sebagai file katalog metadata dan `lakehouse/shared_catalog.ducklake.files/` sebagai direktori penyimpanan data fisik tabel, termasuk berkas Parquet. Pertahankan pasangan path ini agar katalog dapat menemukan data tabel yang dikelolanya.
+
+### Empat query analitik di `sql/lake/`
+
+| File | Tabel output | Fungsi |
 |---|---|---|
-| `dim_brand` | Dimensi | 10 brand |
-| `dim_phone` | Dimensi | 270 HP + chipset, RAM, storage, baterai, tahun rilis |
-| `dim_platform` | Dimensi | Tokopedia, Shopee |
-| `dim_seller` | Dimensi | Penjual & lokasi |
-| `dim_date` | Dimensi | Tanggal scraping (hari, bulan, kuartal, tahun) |
-| `fact_sales` | Fakta | Listing bersih: harga asli, harga diskon, % diskon, rating, jumlah terjual |
-| `mart_price_stats` | Mart | Median/rata-rata/min/maks harga per HP per platform |
-| `mart_price_comparison` | Mart | Selisih harga Tokopedia vs Shopee per HP (Rp & %) |
-| `mart_sentiment_summary` | Mart *(opsional)* | % positif/netral/negatif per HP |
-| `mart_sentiment_vs_price` | Mart *(opsional)* | Gabungan sentimen dan harga per HP |
+| `10_dim_phone.sql` | `lake.analytics.dim_phone` | Master model HP dari `lake.gsmarena.clean_spek`, termasuk spesifikasi dan token nama untuk pemetaan listing. |
+| `11_map_listing.sql` | `lake.analytics.map_listing` | Menggabungkan listing Tokopedia dan Shopee, lalu mencocokkan judul produk dengan nama model HP. Menyimpan informasi kecocokan dan ambiguitas. |
+| `12_fact_price.sql` | `lake.analytics.fact_price` | Membentuk satu baris per listing yang berhasil dipetakan, beserta harga, rating, penjualan, penjual, dan penanda kualitas (`layak`, `pasti`). |
+| `13_mart_banding_harga.sql` | `lake.analytics.banding_harga` | Menghitung jumlah listing, median harga, total terjual per marketplace, selisih harga, persentase selisih, dan penanda `cukup_data` per model. |
 
----
+### Makna tabel analitik
 
-# 🔄 ETL / ELT Process
+- **`dim_phone`**: referensi model HP dan spesifikasinya.
+- **`map_listing`**: hasil hubungan listing marketplace dengan `phone_id`.
+- **`fact_price`**: detail listing harga yang berhasil dipetakan.
+- **`banding_harga`**: ringkasan perbandingan harga Tokopedia dan Shopee pada tingkat model HP.
 
-## 1. Extract
+### Logika kualitas dan perbandingan
 
-Scraping tiga sumber ke bronze DuckDB (notebook `01`–`03`).
+Di `fact_price`, `layak` dibentuk dari penanda harga wajar, bukan aksesori, dan URL pertama. `pasti` menunjukkan pemetaan yang tidak ambigu atau cocok dengan keyword pencarian. Mart perbandingan hanya mengagregasi baris yang memenuhi `layak AND pasti`.
 
-## 2. Transform
-
-Dilakukan di notebook `04_build_ducklake.ipynb`:
-
-**Spesifikasi HP (GSMArena)**
-- memisahkan nama chipset dari detail proses (mis. `Exynos 1480 (4 nm)` → `Exynos 1480`),
-- mengidentifikasi brand chipset (Snapdragon, Exynos, Dimensity, Helio, Tensor, dst.),
-- parsing RAM, storage, dan baterai dari teks menjadi **angka** (GB / mAh),
-- membuang HP batal rilis/rumor dan memastikan jendela tahun `MIN_YEAR = 2025`.
-
-**Penjualan (Tokopedia & Shopee)**
-- mengubah harga `"Rp1.999.000"` → angka integer,
-- mengubah jumlah terjual `"1,2rb+ terjual"` → angka,
-- parsing rating dan persentase diskon,
-- membuang HP bekas (`second`, `bekas`, `preloved`, `refurbish`, dst.),
-- membuang harga di bawah `Rp300.000` (bukan HP),
-- menghapus listing duplikat.
-
-**Pencocokan & penyeimbangan**
-- memetakan judul listing ke nama HP baku GSMArena,
-- membuang listing yang tidak cocok,
-- menyamakan jumlah listing per HP antar platform (`LISTINGS_PER_PHONE = 10`, minimal 5) agar perbandingan adil.
-
-## 3. Load
-
-Hasil ditulis ke DuckLake menggunakan `CREATE OR REPLACE TABLE lake.<nama_tabel>`, kemudian divalidasi:
-
-- foreign key `phone_id`, `platform_id`, `seller_id` tidak boleh orphan,
-- ukuran folder lakehouse dicek terhadap batas GitHub (peringatan di 50 MB, batas keras 100 MB/file).
-
----
-
-# 📊 Ringkasan Volume Data
-
-| Tahap | GSMArena | Tokopedia | Shopee |
-|---|---:|---:|---:|
-| Mentah (bronze) | 282 HP | 1.451 listing | 606 listing |
-| Setelah cleaning | 270 HP | 951 listing | 307 listing |
-| Gold (dicocokkan & diseimbangkan) | 270 HP di `dim_phone` | 45 listing | 45 listing |
-
-Pada build terakhir, **8 HP** berhasil dibandingkan harganya di kedua platform (**90 listing** di `fact_sales`). Angka ini akan bertambah seiring scraping dilanjutkan dan notebook `04` dijalankan ulang.
-
----
-
-# 📈 Arah Analisis
-
-## 1. Perbandingan Harga Antar Platform
+Rumus selisih yang digunakan:
 
 ```text
-Selisih (Rp)  = Harga median Shopee − Harga median Tokopedia
+Selisih (Rp) = median harga Shopee − median harga Tokopedia
 
-Selisih (%)   =  (Shopee − Tokopedia)
-                 ───────────────────── × 100%
-                       Tokopedia
+Selisih (%) = 100 × (median Shopee − median Tokopedia)
+                    / median Tokopedia
 ```
 
-Output: tabel dan grafik batang harga per HP, serta kolom `lebih_murah` (Shopee / Tokopedia / Sama).
+Nilai positif berarti median Shopee lebih tinggi; nilai negatif berarti median Shopee lebih rendah. `cukup_data` bernilai benar bila tersedia minimal tiga listing layak dan pasti pada masing-masing marketplace. Ini adalah ambang kecukupan data yang dipakai query, bukan bukti statistik bahwa perbandingan sudah mewakili seluruh pasar.
 
-## 2. Statistik Harga per HP
-
-Median, rata-rata, minimum, maksimum, rata-rata rating, dan total terjual per HP per platform. **Median** dipakai sebagai indikator utama agar tidak terlalu dipengaruhi listing berharga ekstrem.
-
-## 3. Analisis Brand & Spesifikasi
-
-Perbandingan harga, rating, dan penjualan antar brand; serta hubungan chipset, RAM, storage, dan baterai terhadap harga.
-
-## 4. Sentimen vs Harga *(tahap lanjutan)*
-
-Menghubungkan persepsi publik di YouTube dengan harga di marketplace. Pendekatan **weighted sentiment** dipakai untuk menangani ketimpangan jumlah komentar antar HP:
-
-```text
-weighted_sentiment = sentiment_score_avg × log(1 + jumlah_komentar)
-```
-
-Dashboard memberi label `indikasi_branding` berdasarkan aturan sederhana (ambang rasio 1,5×). Ini **bukan** kesimpulan statistik yang ketat.
+**Catatan arsitektur:** SQL lakehouse yang tersedia saat ini membangun empat tabel analitik di atas. README versi sebelumnya menyebut star schema dengan `fact_sales`, `dim_brand`, `dim_platform`, `dim_seller`, `dim_date`, serta mart sentimen. Tabel-tabel tersebut **tidak dibangun oleh file `sql/lake/10–13` yang ada dalam project saat ini**, sehingga tidak didokumentasikan sebagai tabel implementasi aktif.
 
 ---
 
-# 🖥️ Dashboard Streamlit
+## 📊 Dashboard Streamlit
 
-File: `dashboard/dashboard.py`
+File utama: `dashboard/dashboard.py`.
 
-Dashboard membaca langsung dari **DuckLake** (`ATTACH 'ducklake:...' (READ_ONLY)`), tanpa menyentuh file bronze.
+Dashboard membuka koneksi DuckLake untuk membaca data. Terdapat juga mode lokal yang membangun katalog sementara dan memanggil fungsi publikasi serta SQL lakehouse. Fungsi pemuatan data mengambil tabel analitik serta tabel komentar/penyebutan merek yang dibutuhkan untuk menampilkan grafik dan tabel.
 
-## Filter (Sidebar)
+### Tab yang tersedia
 
-```text
-Brand · Tahun Rilis · Rentang Harga
-```
-
-## Bagian Dashboard
-
-| Bagian | Isi |
+| Tab | Fokus analisis |
 |---|---|
-| **Ringkasan** | Jumlah HP di database, jumlah HP yang dibandingkan, total listing, rata-rata selisih Shopee vs Tokopedia |
-| **💰 Perbandingan Harga** | Tabel selisih harga + grafik batang 20 HP dengan harga tertinggi |
-| **💬 Sentimen YouTube** | Scatter harga vs % komentar negatif, tabel ringkasan, indikasi branding *(muncul jika data tersedia)* |
-| **🔎 Detail per HP** | Chipset, RAM, storage, baterai, harga di tiap platform, dan sentimen |
+| **Ringkasan** | KPI model terpetakan, listing dianalisis, median harga, jumlah terjual terlapor, dan komentar YouTube bersih. |
+| **Pasar & Harga** | Eksplorasi distribusi harga, segmen, merek, listing, dan indikator pasar. |
+| **Shopee vs Tokopedia** | Perbandingan median harga, jumlah listing, selisih persentase, distribusi selisih, dan unduhan CSV. Tab ini memakai `banding_harga`. |
+| **Spesifikasi vs Harga** | Eksplorasi hubungan atribut spesifikasi HP dengan harga. Analisisnya bersifat deskriptif/asosiatif, bukan bukti sebab-akibat. |
+| **Suara Komentar** | Analisis teks komentar, frekuensi kata, dan penyebutan merek. Ini bukan klasifikasi sentimen positif/netral/negatif kecuali ada model/label tambahan yang belum terdapat di pipeline SQL saat ini. |
+| **Data & Kualitas** | Informasi cakupan, pemetaan listing, penanda kualitas data, dan pemeriksaan data/snapshot yang tersedia. |
 
-Bagian yang datanya belum tersedia akan menampilkan pesan informatif, bukan error.
+Dashboard memiliki filter sidebar, termasuk sumber data, merek, marketplace, rentang harga, dan jumlah minimum listing per model. Hasil visualisasi bergantung pada filter dan data yang lolos kriteria analisis.
+
+### Menjalankan dashboard
+
+Dari folder root project:
+
+```powershell
+python -m streamlit run dashboard/dashboard.py
+```
+
+Dashboard berjalan pada alamat lokal yang ditampilkan oleh Streamlit, umumnya `http://localhost:8501`.
 
 ---
 
-# 📁 Struktur Repository
+## 🧪 Pengujian dan File Pendukung
 
-```text
-PJBL/
-│
-├── data/                           # Salinan CSV data mentah (untuk laporan)
-│   ├── raw_dataset_gsmarena.csv
-│   ├── raw_dataset_tokopedia.csv
-│   └── raw_dataset_shopee.csv
-│
-├── database/                       # Bronze layer (DuckDB per sumber)
-│   ├── gsmarena.duckdb
-│   ├── tokopedia.duckdb
-│   └── shopee.duckdb
-│
-├── lakehouse/                      # Gold layer (DuckLake)
-│   ├── lakehouse.ducklake          # Catalog / metadata
-│   └── files/                      # File Parquet milik DuckLake
-│
-├── notebook/
-│   ├── 01_scraping_gsmarena.ipynb  # Bronze: spesifikasi HP
-│   ├── 02_scraping_tokopedia.ipynb # Bronze: harga & penjualan Tokopedia
-│   ├── 03_scraping_shopee.ipynb    # Bronze: harga & penjualan Shopee
-│   └── 04_build_ducklake.ipynb     # Gold: cleaning, matching, star schema
-│
-├── dashboard/
-│   └── dashboard.py                # Dashboard Streamlit
-│
-├── README.md
-└── requirements.txt
-```
+- **`test_lake.py`**: menguji apakah katalog DuckLake dapat dibuka dan tabel analitik dapat dibaca.
+- **`requirements.txt`**: daftar dependensi Python untuk DuckDB, Pandas, scraping, Streamlit, Plotly, dan Jupyter.
+- **`README.md`**: dokumentasi arsitektur, pipeline, serta cara menjalankan project.
+- **`notebook/01_scraping_gsmarena.ipynb`**, **`02_scraping_tokopedia.ipynb`**, dan **`03_scraping_shopee.ipynb`**: notebook pengambilan data.
+- **`notebook/04_build_ducklake.ipynb`**: notebook pembangunan/eksplorasi DuckLake; untuk pipeline modular yang ada saat ini, entry point eksekusi tersedia di `SRC/`.
+- **`*.duckdb.wal`**: file write-ahead log yang dapat muncul saat database DuckDB sedang digunakan. Jangan menghapusnya saat proses database aktif.
 
 ---
 
-# ⚙️ Cara Install & Menjalankan
+## ⚙️ Instalasi dan Menjalankan Project
 
-## 1. Clone Repository
+Disarankan menggunakan virtual environment agar dependensi project tidak mengganggu paket Python lain.
 
-```bash
-git clone https://github.com/RamaPratamaa/smartphone-marketplace-analysis.git
-cd [smartphone-marketplace-analysis.git]
+### 1. Buat dan aktifkan virtual environment (Windows PowerShell)
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 ```
 
-## 2. Buat Virtual Environment (Direkomendasikan)
+### 2. Pasang dependensi
 
-```bash
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# Mac/Linux
-source venv/bin/activate
+```powershell
+python -m pip install -r requirements.txt
 ```
 
-## 3. Install Dependensi
+DuckLake digunakan sebagai ekstensi DuckDB dan pada pemakaian pertama mungkin memerlukan akses internet untuk menginstal ekstensi.
 
-```bash
-pip install -r requirements.txt
+### 3. Jalankan pipeline dari folder root
+
+```powershell
+python SRC/build_local.py
+python SRC/publish.py
+python SRC/build_lake.py
 ```
 
-Notebook scraping memasang library tambahan sendiri lewat `%pip install` (`requests`, `beautifulsoup4`, `lxml`, `selenium`).
+### 4. Jalankan dashboard
 
-## 4. Jalankan Notebook Sesuai Urutan
-
-Jalankan dari **folder root repo** supaya path relatif benar.
-
-| Urutan | Notebook | Tujuan | Output |
-|---|---|---|---|
-| 1 | `01_scraping_gsmarena.ipynb` | Scraping spesifikasi HP | `gsmarena.duckdb` |
-| 2 | `02_scraping_tokopedia.ipynb` | Scraping listing Tokopedia | `tokopedia.duckdb` |
-| 3 | `03_scraping_shopee.ipynb` | Scraping listing Shopee | `shopee.duckdb` |
-| 4 | `04_build_ducklake.ipynb` | Cleaning, matching, star schema | `lakehouse.ducklake` |
-
-> Notebook 02 dan 03 **membutuhkan** `gsmarena.duckdb` terisi lebih dulu (sebagai daftar keyword). Notebook 03 secara opsional memprioritaskan keyword dari `tokopedia.duckdb`.
-
-### Persiapan Scraping Tokopedia & Shopee
-
-Selenium tersambung ke **Chrome yang dibuka manual** dengan remote debugging (bukan membuka browser baru), supaya captcha/login bisa diselesaikan sendiri:
-
-```bash
-# Windows (Command Prompt)
-"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\chrome-debug"
+```powershell
+python -m streamlit run dashboard/dashboard.py
 ```
 
-Lalu buka `tokopedia.com` / `shopee.co.id` (Shopee: login terlebih dahulu) dan lakukan satu pencarian manual sebelum menjalankan notebook.
-
-## 5. Jalankan Dashboard
-
-```bash
-streamlit run dashboard/dashboard.py
-```
-
-Buka di browser: `http://localhost:8501`
+Jika hanya mengubah query analitik, biasanya tahap yang perlu dijalankan ulang adalah `python SRC/build_lake.py`, asalkan tabel sumber sudah dipublikasikan. Jika data CSV berubah, jalankan ulang `build_local.py`, `publish.py`, lalu `build_lake.py`.
 
 ---
 
-# 🛠️ Tools dan Teknologi
+## ⚠️ Batasan dan Hal yang Perlu Diperhatikan
 
-- **Python**
-- **DuckDB** — database bronze per sumber & SQL processing
-- **DuckLake** — lakehouse (catalog + Parquet)
-- **Pandas** — cleaning dan transformasi
-- **Requests + BeautifulSoup (lxml)** — scraping GSMArena
-- **Selenium** — scraping Tokopedia & Shopee
-- **Streamlit** — dashboard interaktif
-- **Plotly** — visualisasi interaktif
-- **Git / GitHub** — version control
-
-Dependensi dashboard (`requirements.txt`): `streamlit`, `duckdb`, `pandas`, `plotly`.
+- Data marketplace adalah snapshot pada waktu scraping; harga, rating, dan jumlah terjual dapat berubah.
+- Tidak semua listing berhasil dipetakan ke model HP. Kesalahan atau ambiguitas nama produk dapat memengaruhi hasil.
+- Harga aksesori, harga tidak wajar, URL duplikat, dan pemetaan yang tidak meyakinkan ditandai/dikecualikan dari perbandingan sesuai aturan SQL.
+- Listing untuk satu model bisa berbeda kondisi, varian RAM/storage, bundling, garansi, atau penjual; median harga tidak selalu membandingkan produk yang benar-benar identik.
+- Jumlah terjual marketplace dapat berupa angka perkiraan dari label seperti `1rb+`.
+- Data YouTube yang ada mendukung pembersihan komentar dan penghitungan penyebutan merek. Pipeline yang tersedia belum membuktikan sentimen dan belum menggabungkan skor sentimen dengan harga/penjualan.
+- Jumlah baris harus dibaca dari hasil build terkini karena CSV dan database dapat berubah.
+- Path katalog dan path data DuckLake harus konsisten. Jika katalog dipindahkan, validasi kembali akses tabel sebelum menjalankan dashboard.
 
 ---
 
-# 🧩 Penerapan Data Warehousing
+## 🚧 Status Implementasi Berdasarkan Kode Saat Ini
 
-Project ini menerapkan konsep-konsep utama data warehousing secara langsung, mulai dari ingestion hingga penyajian ke dashboard.
+### Sumber dan ETL
 
-| Konsep | Penerapan di Project Ini |
-|---|---|
-| **Multi-source integration** | Tiga sumber heterogen (GSMArena, Tokopedia, Shopee) + YouTube opsional, diintegrasikan ke satu model data terpadu |
-| **Arsitektur medallion** | **Bronze** = data mentah per sumber (`*.duckdb`), **Gold** = data bersih & terintegrasi (DuckLake). Bronze tidak diubah, sehingga selalu dapat ditelusuri |
-| **Staging layer** | Satu database DuckDB per sumber berfungsi sebagai staging sebelum transformasi |
-| **ETL / ELT** | Extract lewat scraping (notebook 01–03), Transform & Load lewat SQL + Pandas (notebook 04) |
-| **Dimensional modeling** | *Star schema* dengan 1 tabel fakta (`fact_sales`) dan 5 tabel dimensi (`dim_brand`, `dim_phone`, `dim_platform`, `dim_seller`, `dim_date`) |
-| **Grain tabel fakta** | 1 baris = 1 listing produk di 1 platform pada 1 tanggal scraping |
-| **Surrogate key** | Setiap dimensi memiliki ID buatan (`brand_id`, `phone_id`, `platform_id`, `seller_id`, `date_id`) sebagai penghubung ke tabel fakta |
-| **Data cleaning & standardisasi** | Harga teks → angka, `"1,2rb+ terjual"` → angka, RAM/storage/baterai → numerik, nama chipset disederhanakan |
-| **Data quality & validasi** | Pembuangan aksesoris, HP bekas, harga < Rp300.000, duplikat, dan listing yang tidak cocok; cek foreign key sebelum data dianggap valid |
-| **Entity matching** | Judul listing marketplace dipetakan ke nama HP baku GSMArena (normalisasi nama, varian, RAM/storage) |
-| **Data mart** | Tabel analitik siap pakai: `mart_price_stats`, `mart_price_comparison`, dan mart sentimen *(opsional)* |
-| **Lakehouse** | DuckLake: metadata di `lakehouse.ducklake`, data fisik berupa file Parquet di `files/` |
-| **Checkpointing & idempotent load** | Scraping dapat dilanjutkan tanpa duplikasi; `CREATE OR REPLACE TABLE` membuat build ulang gold aman dijalankan berkali-kali |
-| **Read-only serving layer** | Dashboard Streamlit membaca gold lewat `ATTACH ... (READ_ONLY)`, tanpa menyentuh bronze |
-| **Lineage & reproducibility** | Alur data terdokumentasi lewat notebook berurutan; kolom `scraped_at` dan `dim_date` mencatat waktu pengambilan data |
+- [x] CSV tersedia untuk GSMArena, Tokopedia, Shopee, dan komentar YouTube.
+- [x] SQL ingest, staging, clean, dan mart tersedia untuk keempat sumber.
+- [x] Program build database lokal tersedia di `SRC/build_local.py`.
+- [x] Program publikasi tabel sumber ke DuckLake tersedia di `SRC/publish.py`.
+- [x] Program integrasi analitik tersedia di `SRC/build_lake.py`.
 
----
+### Lakehouse dan analitik
 
-# ⚠️ Catatan Data & Keterbatasan
-
-- Data bersifat **snapshot** pada tanggal scraping; harga marketplace dapat berubah kapan saja.
-- Hanya sebagian kecil HP yang ditemukan di **kedua** platform, sehingga perbandingan harga baru mencakup **8 HP** pada build terakhir.
-- Listing marketplace dapat berisi varian, bundling, atau penjual dengan kondisi berbeda sehingga harga tidak selalu *apple-to-apple*.
-- Beberapa HP dari GSMArena belum dijual resmi di Indonesia (mis. varian China/India) sehingga tidak ditemukan di marketplace.
-- Shopee memblokir akses otomatis; sebagian data dikumpulkan secara semi-manual.
-- Jumlah terjual di marketplace berupa teks pembulatan (mis. `1rb+`), sehingga hanya perkiraan.
-- Label `indikasi_branding` adalah aturan sederhana, bukan uji statistik.
-- Scraping hanya untuk keperluan akademik; hormati ketentuan layanan masing-masing situs.
-
----
-
-# 🚧 Status Project
-
-### Data
-
-- [x] Scraping spesifikasi HP (GSMArena)
-- [x] Scraping listing Tokopedia
-- [x] Scraping listing Shopee
-- [ ] Scraping & sentimen komentar YouTube
-- [ ] Menambah jumlah HP yang tercocokkan di kedua platform
-
-### Data Warehousing
-
-- [x] Bronze layer (`gsmarena`, `tokopedia`, `shopee` `.duckdb`)
-- [x] Cleaning & transformasi
-- [x] Pencocokan nama HP antar sumber
-- [x] Star schema di DuckLake
-- [x] Mart perbandingan harga
-- [ ] Mart sentimen (menunggu `youtube.duckdb`)
-
-### Analytics
-
-- [x] Perbandingan harga Tokopedia vs Shopee
-- [x] Statistik harga per HP
-- [ ] Analisis brand & spesifikasi vs harga
-- [ ] Korelasi sentimen vs penjualan
-- [ ] Gap analysis (overrated vs underrated)
+- [x] `analytics.dim_phone`
+- [x] `analytics.map_listing`
+- [x] `analytics.fact_price`
+- [x] `analytics.banding_harga`
+- [ ] Model klasifikasi sentimen YouTube positif/netral/negatif
+- [ ] Mart gabungan sentimen dengan harga/penjualan
+- [ ] Star schema `fact_sales` dengan dimensi tanggal/platform/penjual/merek seperti yang disebut pada dokumentasi lama
 
 ### Dashboard
 
-- [x] Filter brand, tahun rilis, rentang harga
-- [x] Perbandingan harga
-- [x] Detail per HP
-- [ ] Bagian sentimen YouTube (kode siap, menunggu data)
-- [ ] Deployment (Streamlit Community Cloud)
+- [x] Ringkasan
+- [x] Pasar & Harga
+- [x] Shopee vs Tokopedia
+- [x] Spesifikasi vs Harga
+- [x] Suara Komentar
+- [x] Data & Kualitas
+
+Status `[x]` menunjukkan komponen/kode tersedia dalam project, bukan jaminan bahwa seluruh analisis bebas dari error atau semua hasil memiliki cakupan data yang besar.
 
 ---
 
-# 📝 Catatan Teknis
+## 🛠️ Teknologi
 
-- **File `.duckdb` ikut di-commit ke GitHub.** Batas keras GitHub adalah 100 MB/file. Notebook mencetak ukuran file setelah selesai; jika mendekati batas, pertimbangkan Git LFS.
-- File `*.duckdb.wal` adalah file sementara DuckDB dan umumnya tidak perlu di-commit (tambahkan ke `.gitignore`).
-- Jangan membuka satu file `.duckdb` di dua notebook sekaligus karena DuckDB mengunci file saat digunakan.
-- Jalankan ulang `04_build_ducklake.ipynb` setiap ada data baru di bronze; `CREATE OR REPLACE TABLE` akan menimpa isi lama.
-- Ekstensi DuckLake diunduh otomatis lewat `INSTALL ducklake` (butuh internet pada pemakaian pertama).
+- **Python** — bahasa pemrograman pipeline dan dashboard.
+- **DuckDB** — database analitik lokal dan mesin SQL.
+- **DuckLake** — katalog lakehouse dan pengelolaan data tabel berbasis file Parquet.
+- **SQL** — ingestion, standardisasi, cleaning, agregasi, pemetaan listing, dan pembangunan tabel analitik.
+- **Pandas / NumPy** — pengolahan data dan perhitungan numerik di dashboard.
+- **Requests / BeautifulSoup / lxml / Selenium** — scraping yang digunakan dalam notebook terkait.
+- **Streamlit** — dashboard interaktif.
+- **Plotly** — grafik interaktif.
+- **Jupyter / ipykernel** — menjalankan notebook.
 
 ---
 
-# 🎯 Expected Output
+## 🎯 Output Project
 
-Output akhir project berupa **data warehouse dan dashboard analitik smartphone** yang memungkinkan pengguna mengeksplorasi:
+Output aktif project saat ini adalah dashboard analitik yang menghubungkan spesifikasi HP GSMArena dengan listing marketplace yang berhasil dipetakan. Pengguna dapat menelusuri kualitas pemetaan, membandingkan median harga Shopee dan Tokopedia, mengeksplorasi hubungan spesifikasi dan harga, serta melihat analisis komentar/penyebutan merek YouTube.
 
-```text
-BRAND
-  ↓
-MODEL HP
-  ↓
-SPESIFIKASI
-  ↓
-HARGA TIAP PLATFORM
-  ↓
-SENTIMEN PUBLIK
-```
-
-dan menghasilkan informasi mengenai:
+Alur ringkasnya:
 
 ```text
-Harga · Selisih antar platform · Rating · Penjualan · Spesifikasi · Sentimen
+Data sumber
+  ↓
+DuckDB lokal per sumber
+  ↓
+SQL ETL: raw → staging → clean → mart
+  ↓
+Publikasi ke DuckLake
+  ↓
+Integrasi: dim_phone → map_listing → fact_price → banding_harga
+  ↓
+Dashboard Streamlit
 ```
 
-Dengan demikian, project ini tidak hanya berfungsi sebagai visualisasi data, tetapi sebagai implementasi proses **Web Scraping → Bronze (DuckDB) → ETL → Gold (DuckLake, Star Schema) → Analytics → Interactive Dashboard (Streamlit)**.
+Dengan demikian, project ini bukan sekadar visualisasi, melainkan pipeline analitik multi-sumber. Dokumentasi ini membedakan fitur yang memang dibangun oleh kode saat ini dari ide pengembangan lanjutan seperti klasifikasi sentimen dan star schema yang lebih luas.
