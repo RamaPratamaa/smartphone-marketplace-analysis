@@ -12,13 +12,14 @@ pandas>=2.0.0
 requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
+pillow>=10.0.0
 
 # --- Scraping Tokopedia & Shopee (notebook 02 & 03) ---
 # Selenium 4.6+ mengunduh ChromeDriver otomatis (Google Chrome harus sudah terpasang)
 selenium>=4.15.0
 
 # --- Dashboard (dashboard/dashboard.py) ---
-streamlit>=1.30.0
+streamlit>=1.37.0
 plotly>=5.18.0
 
 # --- Menjalankan notebook (.ipynb) ---

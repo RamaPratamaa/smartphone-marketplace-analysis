@@ -3,7 +3,7 @@ Dashboard analisis harga HP (Shopee + Tokopedia + GSMArena + komentar YouTube).
 
 """
 import contextlib
-import io
+import html
 import os
 import re
 import sys
@@ -16,44 +16,126 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 import streamlit as st
 
 ROOT = Path(__file__).resolve().parent.parent
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT / "SRC"))
 
-LAKE_CATALOG = "lakehouse/shared_catalog.ducklake"
-LAKE_DATA = "lakehouse/shared_catalog.ducklake.files/"
-MODE_LAKE = "Katalog bersama (DuckLake)"
-MODE_LOCAL = "Mode lokal (tanpa DuckLake)"
+# Path absolut yang dihitung dari lokasi file ini, jadi tidak bergantung pada
+# folder tempat Streamlit dijalankan maupun nama user/drive di laptop masing-masing.
+# Struktur repo: lakehouse/shared_catalog.ducklake + lakehouse/shared_catalog.ducklake.files/
+LAKE_CATALOG = (ROOT / "lakehouse" / "shared_catalog.ducklake").as_posix()
+LAKE_DATA = (ROOT / "lakehouse" / "shared_catalog.ducklake.files").as_posix() + "/"
 
-C_TOKPED, C_SHOPEE = "#16a34a", "#f97316"
+# Palet warna korporat (dipakai di CSS dan semua grafik)
+NAVY, ACCENT, BLUE, SLATE = "#0F2D52", "#0E7C86", "#3E6FB0", "#64748B"   # NAVY hanya untuk header; BLUE untuk grafik
+C_TOKPED, C_SHOPEE = "#16a34a", "#f97316"      # warna khas masing-masing marketplace
+COLORWAY = ["#3E6FB0", "#0E7C86", "#8CA6CF", "#D69E2E", "#7A869A",
+            "#C2410C", "#5B8E7D", "#7C6BB5", "#475569", "#B4477A"]
+FONT = "Inter, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
 SEG_LABELS = ["< 2 jt", "2-4 jt", "4-7 jt", "7-12 jt", "> 12 jt"]
 SEG_BINS = [0, 2e6, 4e6, 7e6, 12e6, np.inf]
 
-st.set_page_config(page_title="Dashboard Harga HP", page_icon="📱", layout="wide")
+st.set_page_config(page_title="Dashboard Harga HP", layout="wide")
+
+# Template grafik: font seragam, grid tipis transparan. Warna teks dan latar mengikuti tema
+# Streamlit (terang atau gelap), jadi grafik tetap terbaca di kedua tema.
+_axis = dict(gridcolor="rgba(128,128,128,0.18)", linecolor="rgba(128,128,128,0.45)",
+             zerolinecolor="rgba(128,128,128,0.3)", ticks="outside", tickcolor="rgba(128,128,128,0.45)")
+pio.templates["corp"] = go.layout.Template(layout=go.Layout(
+    font=dict(family=FONT, size=12), colorway=COLORWAY, xaxis=_axis, yaxis=_axis,
+))
+pio.templates.default = "plotly_white+corp"
 
 st.markdown(
     """
 <style>
-.block-container {padding-top: 1.4rem; max-width: 1350px;}
-.hero {background: linear-gradient(120deg,#0f766e 0%,#115e59 45%,#1e3a8a 100%);
-       padding: 1.5rem 1.8rem; border-radius: 18px; color: #fff; margin-bottom: 1rem;}
-.hero h1 {margin: 0; font-size: 1.85rem; color: #fff;}
-.hero p {margin: .35rem 0 0; opacity: .9; font-size: .95rem;}
-.kpi {border: 1px solid rgba(128,128,128,.28); background: rgba(128,128,128,.07);
-      border-radius: 14px; padding: .85rem 1.05rem; height: 100%;}
-.kpi .l {font-size: .74rem; opacity: .7; text-transform: uppercase; letter-spacing: .05em;}
-.kpi .v {font-size: 1.55rem; font-weight: 700; line-height: 1.3;}
-.kpi .s {font-size: .78rem; opacity: .65;}
-.insight {border-left: 4px solid #14b8a6; background: rgba(20,184,166,.09);
-          padding: .65rem 1rem; border-radius: 0 10px 10px 0; margin: .35rem 0; font-size: .95rem;}
-.warn {border-left: 4px solid #f59e0b; background: rgba(245,158,11,.10);
-       padding: .65rem 1rem; border-radius: 0 10px 10px 0; margin: .35rem 0; font-size: .92rem;}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+:root {--navy:#0F2D52; --accent:#0E7C86; --line: rgba(128,128,128,.30); --soft: rgba(128,128,128,.08);}
+html, body, .stApp, h1, h2, h3, h4, h5, h6, p, label, button, input, textarea, li {
+    font-family: Inter, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;}
+#MainMenu, footer, .stDeployButton, [data-testid="stAppDeployButton"], [data-testid="stDecoration"] {display: none !important;}
+header[data-testid="stHeader"] {background: transparent;}
+.block-container {padding-top: 1.2rem; padding-bottom: 3rem; max-width: 1360px;}
+
+/* Header (selalu navy dengan teks putih, jelas di tema terang maupun gelap) */
+.topbar {background: var(--navy); color: #fff; padding: 1.5rem 2rem 1.4rem; border-radius: 6px;
+         margin-bottom: 1.2rem; border-bottom: 4px solid var(--accent);}
+.topbar .eyebrow {font-size: .72rem; letter-spacing: .14em; text-transform: uppercase;
+                  color: #9FB6D3; font-weight: 600;}
+.topbar h1 {margin: .25rem 0 .3rem; padding: 0; font-size: 1.7rem; font-weight: 700; color: #fff;
+            letter-spacing: -.01em;}
+.topbar p {margin: 0; color: #C9D6E8; font-size: .92rem;}
+
+/* Tab: warna teks mengikuti tema */
+.stTabs [data-baseweb="tab-list"] {gap: 1.7rem; border-bottom: 1px solid var(--line);}
+.stTabs [data-baseweb="tab"] {height: 2.9rem; padding: 0 .1rem; background: transparent;}
+.stTabs [data-baseweb="tab"] p {font-weight: 600; font-size: .92rem; opacity: .65;}
+.stTabs [aria-selected="true"] p {opacity: 1; color: var(--accent);}
+.stTabs [data-baseweb="tab-highlight"] {background-color: var(--accent) !important; height: 3px;}
+.stTabs [role="tablist"] .react-aria-SelectionIndicator {background-color: var(--accent) !important;}
+span[data-baseweb="tag"], span[data-tag] {background-color: var(--accent) !important;}
+.stTabs [data-baseweb="tab-border"] {background-color: transparent;}
+
+/* Judul bagian: warna mengikuti tema */
+h4, h5 {font-weight: 700; letter-spacing: -.005em; color: inherit;}
+h4 {font-size: 1.15rem; margin-top: .6rem;}
+h5 {font-size: 1.02rem; margin-top: .4rem;}
+
+/* Kartu KPI: latar transparan netral */
+.kpi {background: var(--soft); border: 1px solid var(--line); border-top: 3px solid var(--accent);
+      border-radius: 6px; padding: .9rem 1.1rem; min-height: 7.2rem;}
+.kpi .l {font-size: .7rem; opacity: .7; text-transform: uppercase; letter-spacing: .08em; font-weight: 600;}
+.kpi .v {font-size: 1.5rem; font-weight: 700; line-height: 1.35;}
+.kpi .s {font-size: .76rem; opacity: .65;}
+
+/* Catatan */
+.insight {border-left: 3px solid var(--accent); background: rgba(14,124,134,.10); padding: .7rem 1rem;
+          border-radius: 0 6px 6px 0; margin: .4rem 0; font-size: .93rem;}
+.warn {border-left: 3px solid #D69E2E; background: rgba(214,158,46,.12); padding: .7rem 1rem;
+       border-radius: 0 6px 6px 0; margin: .4rem 0; font-size: .9rem;}
+
+/* Sidebar */
+[data-testid="stSidebar"] {border-right: 1px solid var(--line);}
+[data-testid="stSidebar"] h3 {font-size: .76rem; text-transform: uppercase; letter-spacing: .12em;
+                              opacity: .7; font-weight: 700;}
+
+/* Galeri HP */
+div[data-testid="stVerticalBlockBorderWrapper"] {border-radius: 8px; border-color: var(--line);}
+[data-testid="stImage"] {display: flex; justify-content: center;}
+[data-testid="stImage"] img {background: #fff; border-radius: 4px;}
+.noimg {width: 130px; height: 173px; margin: 0 auto; background: var(--soft); border: 1px dashed var(--line);
+        border-radius: 4px; display: flex; align-items: center; justify-content: center;
+        opacity: .75; font-size: .72rem; text-align: center;}
+.phone-name {font-size: .84rem; font-weight: 600; line-height: 1.25; min-height: 2.6em;
+             text-align: center; margin-top: .35rem;}
+.phone-price {font-size: .78rem; opacity: .65; text-align: center; margin-bottom: .45rem;}
+
+/* Tombol dan metrik */
+.stButton > button, .stDownloadButton > button {border-radius: 6px; font-weight: 600; font-size: .82rem;}
+.stButton > button:hover, .stDownloadButton > button:hover {border-color: var(--accent); color: var(--accent);}
+[data-testid="stMetric"] {background: var(--soft); border: 1px solid var(--line); border-radius: 6px;
+                          padding: .6rem .8rem;}
+[data-testid="stMetricLabel"] p {font-size: .72rem; opacity: .7; text-transform: uppercase; letter-spacing: .05em;}
+[data-testid="stMetricValue"] {font-size: 1.25rem;}
+
+/* Footer */
+.footer {margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line);
+         opacity: .6; font-size: .78rem; text-align: center;}
 </style>
 """,
     unsafe_allow_html=True,
 )
+
+# Tanpa .streamlit/config.toml, Streamlit memakai warna utama merah. Geser slider ke warna teal
+# agar seragam; kalau config.toml sudah dipakai (primaryColor = ACCENT), penyesuaian ini dilewati.
+if (st.get_option("theme.primaryColor") or "").lower() != ACCENT.lower():
+    st.markdown(
+        "<style>[data-testid='stSlider'] {filter: hue-rotate(190deg) saturate(.85) brightness(.9);}</style>",
+        unsafe_allow_html=True,
+    )
 
 
 # ============================ helper tampilan ============================
@@ -102,10 +184,9 @@ def style(fig, h=420):
         height=h,
         margin=dict(l=10, r=10, t=top, b=10),
         title=dict(x=0, xanchor="left", y=0.99, yanchor="top", yref="container",
-                   font=dict(size=16)),
+                   font=dict(size=15, family=FONT)),
         legend=dict(orientation="h", yanchor="bottom", y=1.0, xanchor="left", x=0,
                     title_text="", font=dict(size=11)),
-        hoverlabel=dict(font_size=12),
     )
     return fig
 
@@ -137,36 +218,89 @@ def show(fig, h=420):
     st.plotly_chart(style(fig, h), use_container_width=True)
 
 
+LOG_TICKS = [0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100, 200]
+
+
+def log_axis(fig, values, axis="y"):
+    """Sumbu log dengan tick bersih (1, 2, 3, 5, 10, 20, 50, 100) tanpa label minor yang berantakan."""
+    v = pd.Series(values, dtype="float64").dropna()
+    v = v[v > 0]
+    if v.empty:
+        return fig
+    lo, hi = v.min() / 1.25, v.max() * 1.25
+    ticks = [t for t in LOG_TICKS if lo <= t <= hi]
+    if len(ticks) < 3:
+        ticks = [t for t in LOG_TICKS if lo / 2 <= t <= hi * 2]
+    cfg = dict(type="log", range=[float(np.log10(lo)), float(np.log10(hi))], tickmode="array",
+               tickvals=ticks, ticktext=[f"{t:g}".replace(".", ",") for t in ticks])
+    (fig.update_yaxes if axis == "y" else fig.update_xaxes)(**cfg)
+    return fig
+
+
+# ============================ [GALERI HP] gambar & pop-up ============================
+# Gambar dibuat oleh notebook/05_scraping_gsmarena_images.ipynb -> data/phone_images/<phone_id>.jpg
+# (semua berukuran sama, 300x400). phone_id = kunci yang sama dengan dim_phone.
+IMG_DIR = ROOT / "data" / "phone_images"
+
+
+def phone_img(phone_id):
+    f = IMG_DIR / f"{phone_id}.jpg"
+    return str(f) if f.exists() else None
+
+
+@st.dialog("Detail HP", width="large")
+def phone_popup(row, harga_mkt):
+    """Pop-up detail satu model HP. `row` = satu baris dari tabel models."""
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        img = phone_img(row["phone_id"])
+        if img:
+            st.image(img, width=220)
+            st.caption("Gambar: GSMArena")
+        else:
+            st.info("Gambar belum tersedia untuk model ini.")
+    with c2:
+        st.markdown(f"### {row['phone_name']}")
+        st.caption(f"Merek: {row['brand']}")
+        k = st.columns(3)
+        k[0].metric("Median harga", rp(row["harga_median"]))
+        k[1].metric("Terjual (terlapor)", num(row["terjual"]))
+        k[2].metric("Jumlah listing", num(row["listing"]))
+        if len(harga_mkt):
+            st.markdown("**Median harga per marketplace**")
+            for mkt, hrg in harga_mkt.items():
+                st.write(f"- {str(mkt).title()}: {rp(hrg)}")
+        spek = []
+        if pd.notna(row["ram"]):
+            spek.append(f"RAM hingga {row['ram']:.0f} GB")
+        if pd.notna(row["storage"]):
+            spek.append(f"Penyimpanan hingga {row['storage']:.0f} GB")
+        if pd.notna(row["baterai"]):
+            spek.append(f"Baterai {row['baterai']:.0f} mAh")
+        if pd.notna(row["tahun"]):
+            spek.append(f"Rilis {row['tahun']:.0f}")
+        if spek:
+            st.markdown("**Spesifikasi (GSMArena)**")
+            st.write(" • ".join(spek))
+
+
 # ============================ koneksi & data ============================
 @st.cache_resource
-def get_con(mode: str):
-    if mode == MODE_LAKE:
-        con = duckdb.connect()
-        con.execute("INSTALL ducklake; LOAD ducklake;")
-        
-        
-        con.execute(
-            f"ATTACH 'ducklake:{LAKE_CATALOG}' AS lake "
-            "(OVERRIDE_DATA_PATH TRUE, READ_ONLY)"
-        )
-
-
-        return con
-    # Mode lokal: bangun "lake" sementara di memori dari database lokal (tanpa ekstensi DuckLake)
-    import build_lake
-    import publish
-
+def get_con():
     con = duckdb.connect()
-    con.execute("ATTACH ':memory:' AS lake")
-    with contextlib.redirect_stdout(io.StringIO()):
-        publish.publish(con)
-        build_lake.run_lake_sql(con)
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    # Katalog menyimpan data_path absolut dari laptop pembuatnya (C:/KULIAH/Semester 7/...).
+    # DATA_PATH + OVERRIDE_DATA_PATH mengganti path itu dengan folder .files milik repo di komputer ini.
+    con.execute(
+        f"ATTACH 'ducklake:{LAKE_CATALOG}' AS lake "
+        f"(DATA_PATH '{LAKE_DATA}', OVERRIDE_DATA_PATH TRUE, READ_ONLY)"
+    )
     return con
 
 
 @st.cache_data(show_spinner="Memuat data dari katalog...")
-def load(mode: str) -> dict:
-    con = get_con(mode)
+def load() -> dict:
+    con = get_con()
     q = lambda s: con.sql(s).df()  # noqa: E731
     d = {}
     d["fact"] = q(
@@ -219,19 +353,14 @@ def load(mode: str) -> dict:
 
 
 # ============================ sidebar ============================
-st.sidebar.markdown("### ⚙️ Pengaturan")
-mode = st.sidebar.radio(
-    "Sumber data",
-    [MODE_LAKE, MODE_LOCAL],
-    help="Mode lokal membangun katalog sementara dari file DataBase/*.duckdb "
-    "(berguna kalau ekstensi DuckLake bermasalah).",
-)
+st.sidebar.markdown("### Filter data")
 
 try:
-    D = load(mode)
+    D = load()
 except Exception as e:  # noqa: BLE001
     st.markdown(
-        '<div class="hero"><h1>📱 Dashboard Harga HP</h1>'
+        '<div class="topbar"><div class="eyebrow">Analisis Pasar Smartphone</div>'
+        "<h1>Dashboard Harga HP Indonesia</h1>"
         "<p>Data belum bisa dimuat.</p></div>",
         unsafe_allow_html=True,
     )
@@ -300,15 +429,15 @@ st.sidebar.caption(
 
 # ============================ header ============================
 st.markdown(
-    '<div class="hero"><h1>📱 Dashboard Harga HP Indonesia</h1>'
-    "<p>Gabungan data Tokopedia, Shopee, spesifikasi GSMArena, dan komentar YouTube "
-    f"• sumber: {mode}</p></div>",
+    '<div class="topbar"><div class="eyebrow">Analisis Pasar Smartphone</div>'
+    "<h1>Dashboard Harga HP Indonesia</h1>"
+    "<p>Gabungan data Tokopedia, Shopee, spesifikasi GSMArena, dan komentar YouTube</p></div>",
     unsafe_allow_html=True,
 )
 
 tabs = st.tabs([
-    "🏠 Ringkasan", "💰 Pasar & Harga", "⚖️ Shopee vs Tokopedia",
-    "🔧 Spesifikasi vs Harga", "💬 Suara Komentar", "🧪 Data & Kualitas",
+    "Ringkasan", "Pasar & Harga", "Shopee vs Tokopedia",
+    "Spesifikasi vs Harga", "Komentar", "Kualitas Data",
 ])
 
 # ============================ TAB 1: RINGKASAN ============================
@@ -322,7 +451,7 @@ with tabs[0], guard():
     kpi(c[3], "Total terjual (terlapor)", num(base["terjual"].sum()), "jumlah di label marketplace")
     kpi(c[4], "Komentar YouTube bersih", num(len(yt)), f"{yt['channel'].nunique()} channel")
 
-    st.markdown("#### 🔎 Temuan utama")
+    st.markdown("#### Temuan utama")
     top_brand = base.groupby("brand")["terjual"].sum().sort_values(ascending=False)
     seg_sales = base.groupby("segmen", observed=True)["terjual"].sum()
     seg_list = base["segmen"].value_counts()
@@ -349,35 +478,48 @@ with tabs[0], guard():
     else:
         warn("Belum ada model dengan data cukup di kedua marketplace pada filter ini.")
 
-    left, right = st.columns([3, 2])
-    with left:
-        tm = base.groupby(["brand", "phone_name"], as_index=False).agg(
-            terjual=("terjual", "sum"), harga=("harga", "median"), listing=("harga", "size"))
-        tm["ukuran"] = tm["terjual"].clip(lower=1)
-        fig = px.treemap(tm, path=["brand", "phone_name"], values="ukuran", color="harga",
-                         color_continuous_scale="Tealgrn",
-                         hover_data={"listing": True, "terjual": True, "ukuran": False},
-                         title="Peta pasar: ukuran = penjualan terlapor, warna = median harga")
-        show(fig, 460)
-    with right:
-        sh = base.groupby("brand", as_index=False)["terjual"].sum().sort_values("terjual")
-        fig = px.bar(sh, x="terjual", y="brand", orientation="h",
-                     color_discrete_sequence=["#0f766e"], title="Penjualan terlapor per merek")
-        fig.update_layout(xaxis_title="Unit terjual (terlapor)", yaxis_title="")
-        show(fig, 460)
+    # [GALERI HP] menggantikan treemap "Peta pasar"
+    st.markdown("##### Galeri HP terlaris (urut penjualan terlapor)")
+    n_show = st.select_slider("Jumlah HP ditampilkan", options=[6, 12, 18, 24], value=12)
+    top = models.sort_values("terjual", ascending=False).head(n_show).reset_index(drop=True)
+    n_cols = 6
+    for start_i in range(0, len(top), n_cols):
+        cols = st.columns(n_cols)
+        for col, (_, row) in zip(cols, top.iloc[start_i:start_i + n_cols].iterrows()):
+            with col, st.container(border=True):
+                img = phone_img(row["phone_id"])
+                if img:
+                    st.image(img, width=130)
+                else:
+                    st.markdown('<div class="noimg">Foto belum tersedia</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="phone-name">{html.escape(str(row["phone_name"]))}</div>'
+                    f'<div class="phone-price">{rp(row["harga_median"])}</div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button("Lihat detail", key=f"detail_{row['phone_id']}", use_container_width=True):
+                    hm = base[base["phone_id"] == row["phone_id"]].groupby("marketplace")["harga"].median()
+                    phone_popup(row, hm)
+
+    sh = base.groupby("brand", as_index=False)["terjual"].sum().sort_values("terjual")
+    fig = px.bar(sh, x="terjual", y="brand", orientation="h",
+                 color_discrete_sequence=[ACCENT], title="Penjualan terlapor per merek")
+    fig.update_layout(xaxis_title="Unit terjual (terlapor)", yaxis_title="")
+    show(fig, 400)
 
 # ============================ TAB 2: PASAR & HARGA ============================
 with tabs[1], guard():
     a, b = st.columns(2)
     with a:
         order = base.groupby("brand")["harga_jt"].median().sort_values().index.tolist()
-        palette = px.colors.qualitative.Set2
         fig = go.Figure()
-        for i, br in enumerate(order):
+        for br in order:
             fig.add_trace(go.Box(y=base.loc[base["brand"] == br, "harga_jt"].to_numpy(), name=str(br),
-                                 boxpoints=False, marker_color=palette[i % len(palette)]))
+                                 boxpoints=False, line=dict(color=ACCENT, width=1.5),
+                                 fillcolor="rgba(14,124,134,0.22)"))
         fig.update_layout(showlegend=False, title="Sebaran harga per merek (skala log)",
-                          xaxis_title="", yaxis_title="Harga (juta Rp)", yaxis_type="log")
+                          xaxis_title="", yaxis_title="Harga (juta Rp)")
+        log_axis(fig, base["harga_jt"], "y")
         show(fig)
     with b:
         seg = (base.groupby("segmen", observed=True)
@@ -387,7 +529,7 @@ with tabs[1], guard():
         sm = seg.melt(id_vars="segmen", value_vars=["Share listing", "Share penjualan"],
                       var_name="Ukuran", value_name="Persen")
         fig = px.bar(sm, x="segmen", y="Persen", color="Ukuran", barmode="group",
-                     color_discrete_sequence=["#94a3b8", "#0f766e"],
+                     color_discrete_sequence=["#94a3b8", ACCENT],
                      title="Segmen harga: pasokan (listing) vs permintaan (penjualan)")
         fig.update_layout(xaxis_title="Segmen harga", yaxis_title="% dari total")
         show(fig)
@@ -415,7 +557,7 @@ with tabs[1], guard():
         fig.update_layout(xaxis_title="Harga (juta Rp)", yaxis_title="Jumlah listing")
         show(fig, 460)
 
-    st.markdown("##### 🏷️ Diskon")
+    st.markdown("##### Diskon")
     disc = base.assign(ada_diskon=base["diskon"].notna())
     d1, d2 = st.columns(2)
     with d1:
@@ -426,7 +568,7 @@ with tabs[1], guard():
         fig.add_bar(x=g["marketplace"].str.title(), y=g["pct_ada"], name="% listing berdiskon",
                     marker_color="#94a3b8")
         fig.add_bar(x=g["marketplace"].str.title(), y=g["rata"].fillna(0),
-                    name="Rata-rata besar diskon (%)", marker_color="#0f766e")
+                    name="Rata-rata besar diskon (%)", marker_color=ACCENT)
         fig.update_layout(barmode="group", title="Intensitas diskon per marketplace")
         show(fig, 340)
     with d2:
@@ -434,7 +576,7 @@ with tabs[1], guard():
         g2 = g2[g2["size"] >= 5].sort_values("mean")
         if len(g2):
             fig = px.bar(g2, x="mean", y="brand", orientation="h",
-                         color_discrete_sequence=["#1e3a8a"],
+                         color_discrete_sequence=[BLUE],
                          title="Rata-rata diskon per merek (min. 5 listing berdiskon)")
             fig.update_layout(xaxis_title="Diskon (%)", yaxis_title="")
             show(fig, 340)
@@ -505,11 +647,14 @@ with tabs[2], guard():
             fig.add_trace(go.Scatter(x=lim, y=lim, mode="lines", line=dict(dash="dash", color="#64748b"),
                                      name="Harga sama", hoverinfo="skip"))
             fig.update_layout(xaxis_title="Median Tokopedia (juta Rp)", yaxis_title="Median Shopee (juta Rp)")
+            both = pd.concat([cmp_df["tokped_jt"], cmp_df["shopee_jt"]])
+            log_axis(fig, both, "x")
+            log_axis(fig, both, "y")
             show(fig, 480)
 
         a, b = st.columns(2)
         with a:
-            fig = px.histogram(cmp_df, x="selisih_pct", nbins=15, color_discrete_sequence=["#0f766e"],
+            fig = px.histogram(cmp_df, x="selisih_pct", nbins=15, color_discrete_sequence=[ACCENT],
                                title="Sebaran selisih harga (Shopee - Tokopedia, %)")
             fig.add_vline(x=0, line_dash="dash", line_color="#64748b")
             fig.add_vline(x=float(np.median(sel)), line_color="#f97316")
@@ -571,7 +716,7 @@ with tabs[2], guard():
         )
 
         st.download_button(
-            "⬇️ Unduh CSV",
+            "Unduh CSV",
             data=tbl.to_csv(index=False).encode("utf-8"),
             file_name="banding_harga.csv",
             mime="text/csv",
@@ -601,6 +746,7 @@ with tabs[3], guard():
                 fig.add_trace(go.Scatter(x=xs, y=np.exp(c0 + k * xs), mode="lines",
                                          line=dict(color="#64748b", dash="dash"), name="Tren"))
             fig.update_layout(xaxis_title=LABEL[xvar], yaxis_title="Median harga (juta Rp)")
+            log_axis(fig, sp["harga_jt"], "y")
             show(fig, 470)
         with b:
             cm = sp[["harga_median", "ram", "storage", "baterai", "tahun"]].rank().corr()
@@ -609,7 +755,7 @@ with tabs[3], guard():
                             zmin=-1, zmax=1, title="Korelasi peringkat (Spearman)")
             show(fig, 470)
 
-        st.markdown("##### 📐 Berapa harga tambahan untuk tiap peningkatan spesifikasi?")
+        st.markdown("##### Berapa harga tambahan untuk tiap peningkatan spesifikasi?")
         if len(sp) >= 15:
             X = np.column_stack([np.ones(len(sp)), sp["ram"], sp["storage"] / 128,
                                  sp["baterai"] / 1000, sp["tahun"] - sp["tahun"].min()])
@@ -621,9 +767,9 @@ with tabs[3], guard():
             se = np.sqrt(np.diag(sigma2 * np.linalg.pinv(X.T @ X)))
             out = pd.DataFrame({
                 "Peningkatan": ["+1 GB RAM", "+128 GB penyimpanan", "+1.000 mAh baterai", "+1 tahun lebih baru"],
-                "Perkiraan efek ke harga (%)": (np.exp(beta[1:]) - 1) * 100,
-                "Batas bawah 95% (%)": (np.exp(beta[1:] - 1.96 * se[1:]) - 1) * 100,
-                "Batas atas 95% (%)": (np.exp(beta[1:] + 1.96 * se[1:]) - 1) * 100,
+                "Perkiraan perubahan harga (%)": (np.exp(beta[1:]) - 1) * 100,
+                "Kemungkinan harga terendah (%)": (np.exp(beta[1:] - 1.96 * se[1:]) - 1) * 100,
+                "Kemungkinan harga tertinggi (%)": (np.exp(beta[1:] + 1.96 * se[1:]) - 1) * 100,
             })
             st.dataframe(out.round(1), hide_index=True, use_container_width=True)
             insight(f"Regresi sederhana ini menjelaskan sekitar **{r2 * 100:.0f}%** variasi harga "
@@ -633,7 +779,7 @@ with tabs[3], guard():
         else:
             st.info("Perlu minimal 15 model dengan spesifikasi lengkap untuk regresi.")
 
-        st.markdown("##### 💎 Skor 'worth it'")
+        st.markdown("##### Skor 'worth it'")
         pr = lambda s: s.rank(pct=True)  # noqa: E731
         sp["skor_spek"] = (pr(sp["ram"]) + pr(sp["storage"]) + pr(sp["baterai"])) / 3 * 100
         sp["pct_harga"] = pr(sp["harga_median"]) * 100
@@ -658,7 +804,7 @@ with tabs[3], guard():
         st.caption("Skor spek = rata-rata persentil RAM, penyimpanan, dan baterai. "
                    "Worth-it = skor spek dikurangi persentil harga. Tidak menilai kamera, layar, atau chipset.")
 
-# ============================ TAB 5: SUARA KOMENTAR ============================
+# ============================ TAB 5: KOMENTAR ============================
 with tabs[4], guard():
     if yt.empty:
         st.info("Belum ada data komentar.")
@@ -676,7 +822,7 @@ with tabs[4], guard():
             cc = yt["channel"].value_counts().reset_index()
             cc.columns = ["channel", "komentar"]
             fig = px.bar(cc.sort_values("komentar"), x="komentar", y="channel", orientation="h",
-                         color_discrete_sequence=["#1e3a8a"], title="Komentar per channel")
+                         color_discrete_sequence=[BLUE], title="Komentar per channel")
             fig.update_layout(yaxis_title="", xaxis_title="Jumlah komentar")
             show(fig, 340)
         with b:
@@ -712,13 +858,13 @@ with tabs[4], guard():
             allt = pd.Series({t_: yt["teks"].str.contains(p, regex=True).mean() * 100
                               for t_, p in TOPIK.items()}).sort_values()
             fig = px.bar(x=allt.values, y=allt.index, orientation="h",
-                         color_discrete_sequence=["#0f766e"], title="Topik terpopuler (semua channel)")
+                         color_discrete_sequence=[ACCENT], title="Topik terpopuler (semua channel)")
             fig.update_layout(showlegend=False, xaxis_title="% komentar", yaxis_title="")
             show(fig, 400)
         insight(f"Topik yang paling sering dibahas: **{allt.index[-1]}** "
                 f"({allt.iloc[-1]:.0f}% komentar), disusul **{allt.index[-2]}** ({allt.iloc[-2]:.0f}%).")
 
-        st.markdown("##### 📣 Obrolan vs penjualan per merek")
+        st.markdown("##### Obrolan vs penjualan per merek")
         mm = D["merek"].copy()
         mm["merek"] = mm["merek"].replace({"Redmi": "Xiaomi", "Poco": "Xiaomi"})
         buzz = mm.groupby("merek")["jumlah_komentar"].sum()
@@ -731,7 +877,7 @@ with tabs[4], guard():
             })
             long = pivot.reset_index(names="merek").melt(id_vars="merek", var_name="Ukuran", value_name="Persen")
             fig = px.bar(long, x="merek", y="Persen", color="Ukuran", barmode="group",
-                         color_discrete_sequence=["#1e3a8a", "#0f766e"],
+                         color_discrete_sequence=[BLUE, ACCENT],
                          title="Merek yang sering dibicarakan vs merek yang laris")
             fig.update_layout(xaxis_title="", yaxis_title="% dari total (merek yang dibandingkan)")
             show(fig, 380)
@@ -768,9 +914,9 @@ with tabs[4], guard():
         warn("Komentar YouTube belum bisa dikaitkan ke model HP tertentu karena data scrape tidak memuat "
              "ID/judul video. Analisis di tab ini bersifat per channel dan per merek.")
 
-# ============================ TAB 6: DATA & KUALITAS ============================
+# ============================ TAB 6: KUALITAS DATA ============================
 with tabs[5], guard():
-    st.markdown("##### 🔻 Dari data mentah ke data siap analisis")
+    st.markdown("##### Dari data mentah ke data siap analisis")
     f = D["funnel"]
     stages = ["Listing hasil scrape", "Lolos filter kualitas", "Terpetakan ke model GSMArena",
               "Pemetaan yakin (dipakai analisis)"]
@@ -793,7 +939,7 @@ with tabs[5], guard():
         cv = pd.DataFrame({"Status": ["Ada di kedua marketplace", "Hanya satu marketplace",
                                       "Tidak ada listing"], "Model": [n_both, n_one, n_none]})
         fig = px.pie(cv, names="Status", values="Model", hole=.55,
-                     color_discrete_sequence=["#0f766e", "#f59e0b", "#cbd5e1"],
+                     color_discrete_sequence=[ACCENT, "#f59e0b", "#cbd5e1"],
                      title="Cakupan model GSMArena di marketplace")
         show(fig, 360)
     with b:
@@ -803,26 +949,29 @@ with tabs[5], guard():
             "Database lokal": ["tokopedia_lokal.duckdb", "shopee_lokal.duckdb",
                                "gsmarena_lokal.duckdb", "youtube_lokal.duckdb"],
             "Di katalog bersama": ["lake.tokopedia", "lake.shopee", "lake.gsmarena", "lake.youtube"],
-            "Dipakai di": ["fact_price", "fact_price", "dim_phone", "tab Suara Komentar"],
+            "Dipakai di": ["fact_price", "fact_price", "dim_phone", "tab Komentar"],
         }), hide_index=True, use_container_width=True)
         st.markdown("**Lapisan lintas sumber:** `lake.analytics` → `dim_phone`, `map_listing`, "
                     "`fact_price`, `banding_harga`.")
 
-    if mode == MODE_LAKE:
-        st.markdown("##### 🕒 Riwayat snapshot & time travel (DuckLake)")
+    st.markdown("##### Riwayat snapshot & time travel (DuckLake)")
+    try:
+        con = get_con()
+        snaps = con.sql("SELECT snapshot_id, snapshot_time, changes FROM lake.snapshots()").df()
+        st.dataframe(snaps, hide_index=True, use_container_width=True)
+        pilih = st.selectbox("Lihat jumlah baris fact_price pada snapshot",
+                             snaps["snapshot_id"].tolist()[::-1])
         try:
-            con = get_con(mode)
-            snaps = con.sql("SELECT snapshot_id, snapshot_time, changes FROM lake.snapshots()").df()
-            st.dataframe(snaps, hide_index=True, use_container_width=True)
-            pilih = st.selectbox("Lihat jumlah baris fact_price pada snapshot",
-                                 snaps["snapshot_id"].tolist()[::-1])
-            try:
-                n = con.sql(f"SELECT count(*) AS n FROM lake.analytics.fact_price "
-                            f"AT (VERSION => {int(pilih)})").fetchone()[0]
-                st.metric(f"Baris fact_price di snapshot {int(pilih)}", num(n))
-            except Exception:  # noqa: BLE001
-                st.info("Tabel fact_price belum ada pada snapshot itu.")
-        except Exception as e:  # noqa: BLE001
-            st.info(f"Riwayat snapshot tidak tersedia: {e}")
-    else:
-        st.info("Riwayat snapshot hanya tersedia pada mode Katalog bersama (DuckLake).")
+            n = con.sql(f"SELECT count(*) AS n FROM lake.analytics.fact_price "
+                        f"AT (VERSION => {int(pilih)})").fetchone()[0]
+            st.metric(f"Baris fact_price di snapshot {int(pilih)}", num(n))
+        except Exception:  # noqa: BLE001
+            st.info("Tabel fact_price belum ada pada snapshot itu.")
+    except Exception as e:  # noqa: BLE001
+        st.info(f"Riwayat snapshot tidak tersedia: {e}")
+
+st.markdown(
+    '<div class="footer">Foto HP: GSMArena. Data harga dan komentar dikumpulkan dari '
+    "Tokopedia, Shopee, dan YouTube.</div>",
+    unsafe_allow_html=True,
+)
