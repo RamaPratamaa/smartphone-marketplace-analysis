@@ -781,6 +781,7 @@ with tabs[3], guard():
 
         st.markdown("##### Model Smartphone dengan Nilai Spesifikasi Terbaik terhadap Harga")
         pr = lambda s: s.rank(pct=True)  # noqa: E731
+        sp = sp[~sp["phone_name"].str.contains("watch", case=False, na=False)].copy()
         sp["skor_spek"] = (pr(sp["ram"]) + pr(sp["storage"]) + pr(sp["baterai"])) / 3 * 100
         sp["pct_harga"] = pr(sp["harga_median"]) * 100
         sp["worth_it"] = sp["skor_spek"] - sp["pct_harga"]
