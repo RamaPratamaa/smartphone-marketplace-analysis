@@ -635,7 +635,7 @@ with tabs[2], guard():
                                      marker=dict(color=C_TOKPED, size=11)))
             fig.add_trace(go.Scatter(x=t["shopee_jt"], y=t["phone_name"], mode="markers", name="Shopee",
                                      marker=dict(color=C_SHOPEE, size=11)))
-            fig.update_layout(title="Median harga per model (urut dari Shopee termurah relatif)",
+            fig.update_layout(title="Perbandingan Harga Median Smartphone di Shopee dan Tokopedia",
                               xaxis_title="Harga (juta Rp)", yaxis_title="")
             show(fig, 480)
         with b:
@@ -643,7 +643,7 @@ with tabs[2], guard():
                    max(cmp_df["tokped_jt"].max(), cmp_df["shopee_jt"].max()) * 1.1]
             fig = px.scatter(cmp_df, x="tokped_jt", y="shopee_jt", color="brand", hover_name="phone_name",
                              log_x=True, log_y=True,
-                             title="Tokopedia vs Shopee (di atas garis = Shopee lebih mahal)")
+                             title="Hubungan Harga Smartphone antara Tokopedia dan Shopee")
             fig.add_trace(go.Scatter(x=lim, y=lim, mode="lines", line=dict(dash="dash", color="#64748b"),
                                      name="Harga sama", hoverinfo="skip"))
             fig.update_layout(xaxis_title="Median Tokopedia (juta Rp)", yaxis_title="Median Shopee (juta Rp)")
@@ -655,7 +655,7 @@ with tabs[2], guard():
         a, b = st.columns(2)
         with a:
             fig = px.histogram(cmp_df, x="selisih_pct", nbins=15, color_discrete_sequence=[ACCENT],
-                               title="Sebaran selisih harga (Shopee - Tokopedia, %)")
+                               title="Distribusi Persentase Selisih Harga Shopee terhadap Tokopedia")
             fig.add_vline(x=0, line_dash="dash", line_color="#64748b")
             fig.add_vline(x=float(np.median(sel)), line_color="#f97316")
             fig.update_layout(xaxis_title="Selisih (%)", yaxis_title="Jumlah model")
@@ -666,12 +666,12 @@ with tabs[2], guard():
             if len(gb):
                 fig = px.bar(gb, x="mean", y="brand", orientation="h", color="mean",
                              color_continuous_scale="RdYlGn_r", color_continuous_midpoint=0,
-                             title="Rata-rata selisih per merek (min. 2 model)")
+                             title="Perbandingan Selisih Harga Antar-Brand di Kedua Marketplace")
                 fig.update_layout(xaxis_title="Selisih (%)", yaxis_title="", coloraxis_showscale=False)
                 show(fig, 380)
             else:
                 st.info("Belum ada merek dengan minimal 2 model yang dibandingkan.")
-        st.markdown("##### Tabel perbandingan")
+        st.markdown("##### Tabel perbandingan Harga Smartphone per Model")
 
         tbl = (
             cmp_df[
@@ -739,7 +739,7 @@ with tabs[3], guard():
         with a:
             fig = px.scatter(sp, x=xvar, y="harga_jt", color="brand", size=sp["terjual"].clip(lower=1),
                              size_max=34, hover_name="phone_name", log_y=True,
-                             title="Harga median vs spesifikasi (ukuran gelembung = penjualan)")
+                             title="Hubungan Spesifikasi Smartphone dengan Harga dan Penjualan")
             if sp[xvar].nunique() > 2:
                 k, c0 = np.polyfit(sp[xvar], np.log(sp["harga_jt"]), 1)
                 xs = np.linspace(sp[xvar].min(), sp[xvar].max(), 50)
@@ -752,10 +752,10 @@ with tabs[3], guard():
             cm = sp[["harga_median", "ram", "storage", "baterai", "tahun"]].rank().corr()
             cm.index = cm.columns = ["Harga", "RAM", "Storage", "Baterai", "Tahun"]
             fig = px.imshow(cm.round(2), text_auto=True, color_continuous_scale="RdBu_r",
-                            zmin=-1, zmax=1, title="Korelasi peringkat (Spearman)")
+                            zmin=-1, zmax=1, title="Hubungan Spesifikasi dengan Harga Smartphone")
             show(fig, 470)
 
-        st.markdown("##### Berapa harga tambahan untuk tiap peningkatan spesifikasi?")
+        st.markdown("##### Estimasi Perubahan Harga Berdasarkan Peningkatan Spesifikasi")
         if len(sp) >= 15:
             X = np.column_stack([np.ones(len(sp)), sp["ram"], sp["storage"] / 128,
                                  sp["baterai"] / 1000, sp["tahun"] - sp["tahun"].min()])
@@ -779,7 +779,7 @@ with tabs[3], guard():
         else:
             st.info("Perlu minimal 15 model dengan spesifikasi lengkap untuk regresi.")
 
-        st.markdown("##### Skor 'worth it'")
+        st.markdown("##### Model Smartphone dengan Nilai Spesifikasi Terbaik terhadap Harga")
         pr = lambda s: s.rank(pct=True)  # noqa: E731
         sp["skor_spek"] = (pr(sp["ram"]) + pr(sp["storage"]) + pr(sp["baterai"])) / 3 * 100
         sp["pct_harga"] = pr(sp["harga_median"]) * 100
@@ -794,11 +794,11 @@ with tabs[3], guard():
             "worth_it": st.column_config.NumberColumn("Worth-it", format="%+.0f"),
         }
         with v1:
-            st.caption("Spesifikasi tinggi untuk harganya")
+            st.caption("Smartphone dengan Spesifikasi Tinggi Relatif terhadap Harga")
             st.dataframe(sp.nlargest(10, "worth_it")[cols], hide_index=True, use_container_width=True,
                          column_config=cfg)
         with v2:
-            st.caption("Harga tinggi untuk spesifikasinya")
+            st.caption("Smartphone dengan Harga Relatif Tinggi terhadap Spesifikasi")
             st.dataframe(sp.nsmallest(10, "worth_it")[cols], hide_index=True, use_container_width=True,
                          column_config=cfg)
         st.caption("Skor spek = rata-rata persentil RAM, penyimpanan, dan baterai. "
