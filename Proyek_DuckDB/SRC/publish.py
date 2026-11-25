@@ -11,10 +11,14 @@ from config import LAKE_CATALOG, LAKE_DATA, SOURCES  # noqa: E402
 
 
 def open_lake() -> duckdb.DuckDBPyConnection:
-    Path(LAKE_CATALOG).parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect()
     con.execute("INSTALL ducklake; LOAD ducklake;")
-    con.execute(f"ATTACH 'ducklake:{LAKE_CATALOG}' AS lake (DATA_PATH '{LAKE_DATA}')")
+
+    con.execute(
+        f"ATTACH 'ducklake:{LAKE_CATALOG}' AS lake "
+        f"(DATA_PATH '{LAKE_DATA}', OVERRIDE_DATA_PATH TRUE)"
+    )
+
     return con
 
 
